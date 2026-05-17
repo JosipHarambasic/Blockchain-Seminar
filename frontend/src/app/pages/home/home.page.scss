@@ -1,0 +1,36 @@
+.post-card {
+  transition: box-shadow 0.2s ease;
+
+  &:hover {
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+  }
+}
+
+.post-preview {
+  color: var(--ion-color-dark);
+  line-height: 1.5;
+  margin-bottom: 8px;
+}
+
+.post-stats {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  border-top: 1px solid var(--ion-color-light-shade);
+  padding-top: 6px;
+  margin-top: 4px;
+}
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 60vh;
+  gap: 12px;
+
+  p {
+    color: var(--ion-color-medium);
+    font-size: 1rem;
+  }
+}

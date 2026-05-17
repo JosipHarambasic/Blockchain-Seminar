@@ -1,0 +1,39 @@
+/* Global SCSS — applied to every page */
+
+/* Ionic default imports */
+@import "@ionic/angular/css/core.css";
+@import "@ionic/angular/css/normalize.css";
+@import "@ionic/angular/css/structure.css";
+@import "@ionic/angular/css/typography.css";
+@import "@ionic/angular/css/display.css";
+
+/* Ionic optional utility classes */
+@import "@ionic/angular/css/padding.css";
+@import "@ionic/angular/css/float-elements.css";
+@import "@ionic/angular/css/text-alignment.css";
+@import "@ionic/angular/css/text-transformation.css";
+@import "@ionic/angular/css/flex-utils.css";
+
+/* Ionic v8 dark mode support */
+@import "@ionic/angular/css/palettes/dark.always.css" screen and (prefers-color-scheme: dark);
+
+/* Custom global overrides */
+ion-card {
+  margin-bottom: 12px;
+}
+
+.address-chip {
+  font-family: monospace;
+  font-size: 0.78rem;
+  color: var(--ion-color-medium);
+}
+
+.timestamp {
+  font-size: 0.75rem;
+  color: var(--ion-color-medium);
+}
+
+.like-btn {
+  --padding-start: 6px;
+  --padding-end: 6px;
+}

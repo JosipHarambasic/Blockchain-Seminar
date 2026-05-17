@@ -1,0 +1,176 @@
+<ion-header [translucent]="true">
+  <ion-toolbar color="primary">
+    <ion-buttons slot="start">
+      <ion-back-button defaultHref="/home" text="Forum"></ion-back-button>
+    </ion-buttons>
+    <ion-title>Post</ion-title>
+    <ion-buttons slot="end">
+      <ion-chip *ngIf="!account" (click)="connectWallet()" color="light" outline="true">
+        <ion-icon name="wallet-outline"></ion-icon>
+        <ion-label>Connect</ion-label>
+      </ion-chip>
+      <ion-chip *ngIf="account" color="light">
+        <ion-icon name="checkmark-circle-outline" color="success"></ion-icon>
+        <ion-label class="address-chip">{{ accountShort }}</ion-label>
+      </ion-chip>
+    </ion-buttons>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content [fullscreen]="true">
+
+  <!-- Pull-to-refresh -->
+  <ion-refresher slot="fixed" (ionRefresh)="loadData($event)">
+    <ion-refresher-content pullingText="Pull to refresh…"></ion-refresher-content>
+  </ion-refresher>
+
+  <!-- ─── Post skeleton ──────────────────────────────────────────────────── -->
+  <div *ngIf="isLoadingPost" class="ion-padding">
+    <ion-skeleton-text animated style="width: 80%; height: 26px; margin-bottom: 8px;"></ion-skeleton-text>
+    <ion-skeleton-text animated style="width: 50%; height: 14px; margin-bottom: 16px;"></ion-skeleton-text>
+    <ion-skeleton-text animated style="width: 100%; height: 14px; margin-bottom: 6px;"></ion-skeleton-text>
+    <ion-skeleton-text animated style="width: 100%; height: 14px; margin-bottom: 6px;"></ion-skeleton-text>
+    <ion-skeleton-text animated style="width: 70%; height: 14px;"></ion-skeleton-text>
+  </div>
+
+  <!-- ─── Post detail ────────────────────────────────────────────────────── -->
+  <div *ngIf="post && !isLoadingPost" class="ion-padding">
+    <ion-card class="post-detail-card">
+      <ion-card-header>
+        <ion-card-title class="post-title">{{ post.title }}</ion-card-title>
+        <ion-card-subtitle>
+          <ion-icon name="person-circle-outline" style="vertical-align: middle;"></ion-icon>
+          <span class="address-chip"> {{ post.authorShort }}</span>
+          &nbsp;·&nbsp;
+          <span class="timestamp">{{ post.timestampFormatted }}</span>
+        </ion-card-subtitle>
+      </ion-card-header>
+
+      <ion-card-content>
+        <p class="post-body">{{ post.body }}</p>
+
+        <!-- Actions bar -->
+        <div class="actions-bar">
+          <ion-button
+            fill="clear"
+            size="small"
+            class="like-btn"
+            [color]="post.liked ? 'danger' : 'medium'"
+            (click)="likePost()"
+            [disabled]="post.liked || !account"
+          >
+            <ion-icon slot="start" [name]="post.liked ? 'heart' : 'heart-outline'"></ion-icon>
+            {{ post.likeCount }} {{ post.likeCount === 1 ? 'like' : 'likes' }}
+          </ion-button>
+
+          <ion-button fill="clear" size="small" color="medium" class="like-btn">
+            <ion-icon slot="start" name="chatbubble-outline"></ion-icon>
+            {{ post.commentCount }} {{ post.commentCount === 1 ? 'comment' : 'comments' }}
+          </ion-button>
+        </div>
+      </ion-card-content>
+    </ion-card>
+
+    <!-- ─── Comments section ──────────────────────────────────────────────── -->
+    <div class="comments-section">
+      <h3 class="section-heading">
+        <ion-icon name="chatbubbles-outline"></ion-icon>
+        Comments
+      </h3>
+
+      <!-- Comment skeletons -->
+      <div *ngIf="isLoadingComments">
+        <ion-card *ngFor="let _ of [1,2]">
+          <ion-card-content>
+            <ion-skeleton-text animated style="width: 40%; height: 12px;"></ion-skeleton-text>
+            <ion-skeleton-text animated style="width: 100%; height: 12px; margin-top: 8px;"></ion-skeleton-text>
+          </ion-card-content>
+        </ion-card>
+      </div>
+
+      <!-- Empty comments state -->
+      <div *ngIf="!isLoadingComments && comments.length === 0" class="no-comments ion-text-center ion-padding">
+        <ion-icon name="chatbubble-ellipses-outline" style="font-size: 40px; color: var(--ion-color-medium);"></ion-icon>
+        <p>No comments yet. Be the first!</p>
+      </div>
+
+      <!-- Comments list -->
+      <ion-card *ngFor="let comment of comments" class="comment-card">
+        <ion-card-content>
+          <!-- Comment header -->
+          <div class="comment-header">
+            <ion-icon name="person-outline" style="font-size: 14px;"></ion-icon>
+            <span class="address-chip"> {{ comment.authorShort }}</span>
+            <span class="timestamp"> · {{ comment.timestampFormatted }}</span>
+          </div>
+
+          <!-- Comment body -->
+          <p class="comment-body">{{ comment.body }}</p>
+
+          <!-- Like comment -->
+          <ion-button
+            fill="clear"
+            size="small"
+            class="like-btn"
+            [color]="comment.liked ? 'danger' : 'medium'"
+            (click)="likeComment(comment)"
+            [disabled]="comment.liked || !account"
+          >
+            <ion-icon slot="start" [name]="comment.liked ? 'heart' : 'heart-outline'"></ion-icon>
+            {{ comment.likeCount }}
+          </ion-button>
+        </ion-card-content>
+      </ion-card>
+    </div>
+
+    <!-- ─── Add comment form ───────────────────────────────────────────────── -->
+    <div class="add-comment-section ion-padding-bottom">
+      <h3 class="section-heading">
+        <ion-icon name="create-outline"></ion-icon>
+        Leave a Comment
+      </h3>
+
+      <!-- Not connected notice -->
+      <div *ngIf="!account" class="ion-text-center ion-padding">
+        <p style="color: var(--ion-color-medium);">Connect your wallet to post a comment.</p>
+        <ion-button fill="outline" (click)="connectWallet()">
+          <ion-icon slot="start" name="wallet-outline"></ion-icon>
+          Connect Wallet
+        </ion-button>
+      </div>
+
+      <!-- Comment form -->
+      <form *ngIf="account" [formGroup]="commentForm" (ngSubmit)="submitComment()">
+        <ion-item>
+          <ion-label position="stacked">Your comment</ion-label>
+          <ion-textarea
+            formControlName="body"
+            placeholder="Write your comment here…"
+            rows="4"
+            maxlength="2000"
+            autoGrow="true"
+          ></ion-textarea>
+        </ion-item>
+
+        <ion-note
+          *ngIf="commentForm.get('body')?.invalid && commentForm.get('body')?.touched"
+          color="danger"
+          class="ion-padding-start"
+        >
+          Comment is required (max 2000 characters).
+        </ion-note>
+
+        <ion-button
+          expand="block"
+          type="submit"
+          class="ion-margin-top"
+          [disabled]="commentForm.invalid"
+        >
+          <ion-icon slot="start" name="send-outline"></ion-icon>
+          Post Comment
+        </ion-button>
+      </form>
+    </div>
+  </div>
+
+</ion-content>
