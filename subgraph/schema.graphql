@@ -1,0 +1,58 @@
+"""
+A forum post. Content (title + body JSON) is stored on IPFS; only the 32-byte
+SHA-256 digest of the CIDv1 is stored on-chain and indexed here.
+"""
+type Post @entity {
+  id:           ID!        # string(postId)
+  postId:       BigInt!
+  author:       User!
+  contentHash:  Bytes!     # bytes32 IPFS CID digest
+  timestamp:    BigInt!
+  likeCount:    BigInt!
+  commentCount: BigInt!
+  comments:     [Comment!]! @derivedFrom(field: "post")
+  likes:        [PostLike!]! @derivedFrom(field: "post")
+}
+
+"""
+A comment or reply. parentComment is null for top-level comments.
+"""
+type Comment @entity {
+  id:            ID!        # string(commentId)
+  commentId:     BigInt!
+  post:          Post!
+  parentComment: Comment    # null = top-level; set = nested reply
+  author:        User!
+  contentHash:   Bytes!
+  timestamp:     BigInt!
+  likeCount:     BigInt!
+  replies:       [Comment!]! @derivedFrom(field: "parentComment")
+  likes:         [CommentLike!]! @derivedFrom(field: "comment")
+}
+
+"""
+A wallet address that has interacted with the forum.
+"""
+type User @entity {
+  id:       ID!             # lower-case wallet address
+  posts:    [Post!]!     @derivedFrom(field: "author")
+  comments: [Comment!]!  @derivedFrom(field: "author")
+}
+
+"""
+Records that a wallet liked a specific post (one row per address+post pair).
+"""
+type PostLike @entity {
+  id:    ID!    # "<postId>-<liker>"
+  post:  Post!
+  liker: Bytes! # wallet address
+}
+
+"""
+Records that a wallet liked a specific comment.
+"""
+type CommentLike @entity {
+  id:      ID!    # "<commentId>-<liker>"
+  comment: Comment!
+  liker:   Bytes!
+}

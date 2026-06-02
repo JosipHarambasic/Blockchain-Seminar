@@ -1,173 +1,101 @@
-<ion-header [translucent]="true">
+<ion-header>
   <ion-toolbar color="primary">
     <ion-title>
-      <ion-icon name="chatbubbles-outline" style="vertical-align: middle; margin-right: 6px;"></ion-icon>
-      Decentralized Forum
+      <ion-icon name="chatbubble-outline" style="vertical-align:middle;margin-right:6px"></ion-icon>
+      Decentralised Forum
     </ion-title>
     <ion-buttons slot="end">
-      <!-- Wallet connect / account chip -->
-      <ion-chip *ngIf="!account" (click)="connectWallet()" color="light" outline="true">
-        <ion-icon name="wallet-outline"></ion-icon>
-        <ion-label>Connect</ion-label>
-      </ion-chip>
-      <ion-chip *ngIf="account" color="light">
-        <ion-icon name="checkmark-circle-outline" color="success"></ion-icon>
-        <ion-label class="address-chip">{{ accountShort }}</ion-label>
-      </ion-chip>
+      @if (wallet.address()) {
+        <ion-chip color="light">
+          <ion-label>{{ wallet.displayName() }}</ion-label>
+        </ion-chip>
+      } @else {
+        <ion-button (click)="connectWallet()" fill="outline" color="light">
+          <ion-icon name="wallet-outline" slot="start"></ion-icon>
+          Connect
+        </ion-button>
+      }
     </ion-buttons>
   </ion-toolbar>
 </ion-header>
 
-<ion-content [fullscreen]="true">
-
-  <!-- Pull-to-refresh -->
-  <ion-refresher slot="fixed" (ionRefresh)="loadPosts($event)">
-    <ion-refresher-content pullingText="Pull to refresh posts…"></ion-refresher-content>
+<ion-content>
+  <ion-refresher slot="fixed" (ionRefresh)="handleRefresh($event)">
+    <ion-refresher-content></ion-refresher-content>
   </ion-refresher>
 
-  <!-- Loading skeleton -->
-  <div *ngIf="isLoading && posts.length === 0" class="ion-padding">
-    <ion-card *ngFor="let _ of [1,2,3]">
-      <ion-card-header>
-        <ion-skeleton-text animated style="width: 70%; height: 20px;"></ion-skeleton-text>
-      </ion-card-header>
-      <ion-card-content>
-        <ion-skeleton-text animated style="width: 100%; height: 14px;"></ion-skeleton-text>
-        <ion-skeleton-text animated style="width: 60%; height: 14px;"></ion-skeleton-text>
-      </ion-card-content>
-    </ion-card>
-  </div>
+  <!-- Skeleton while loading for the first time -->
+  @if (isLoading() && posts().length === 0) {
+    @for (s of skeletons; track $index) {
+      <ion-card>
+        <ion-card-header>
+          <ion-skeleton-text animated style="width:60%;height:18px"></ion-skeleton-text>
+          <ion-skeleton-text animated style="width:40%;height:14px;margin-top:4px"></ion-skeleton-text>
+        </ion-card-header>
+        <ion-card-content>
+          <ion-skeleton-text animated style="width:100%;height:14px"></ion-skeleton-text>
+          <ion-skeleton-text animated style="width:80%;height:14px;margin-top:4px"></ion-skeleton-text>
+        </ion-card-content>
+      </ion-card>
+    }
+  }
 
-  <!-- Empty state -->
-  <div *ngIf="!isLoading && posts.length === 0" class="empty-state ion-text-center ion-padding">
-    <ion-icon name="chatbubbles-outline" style="font-size: 64px; color: var(--ion-color-medium);"></ion-icon>
-    <p>No posts yet. Be the first to start a discussion!</p>
-    <ion-button (click)="openCreateModal()" fill="outline">Create First Post</ion-button>
-  </div>
-
-  <!-- Posts list -->
-  <div *ngIf="posts.length > 0" class="ion-padding-horizontal ion-padding-top">
-    <ion-card
-      *ngFor="let post of posts"
-      button
-      (click)="openPost(post.id)"
-      class="post-card"
-    >
+  <!-- Post list -->
+  @for (post of posts(); track post.id) {
+    <ion-card button (click)="openPost(post.id)">
       <ion-card-header>
-        <ion-card-title>{{ post.title }}</ion-card-title>
+        <ion-card-title>{{ post.title || '(no title)' }}</ion-card-title>
         <ion-card-subtitle>
-          <span class="address-chip">{{ post.authorShort }}</span>
-          &nbsp;·&nbsp;
-          <span class="timestamp">{{ post.timestampFormatted }}</span>
+          {{ post.authorDisplay }} &bull; {{ post.timestampFormatted }}
         </ion-card-subtitle>
       </ion-card-header>
 
       <ion-card-content>
-        <!-- Post body preview (truncated) -->
-        <p class="post-preview">{{ post.body | slice:0:180 }}{{ post.body.length > 180 ? '…' : '' }}</p>
+        <p class="post-body-preview">{{ post.body | slice:0:200 }}{{ post.body.length > 200 ? '…' : '' }}</p>
 
-        <!-- Footer stats -->
-        <div class="post-stats">
-          <!-- Like button -->
-          <ion-button
-            fill="clear"
-            size="small"
-            class="like-btn"
-            [color]="post.liked ? 'danger' : 'medium'"
-            (click)="likePost($event, post)"
-            [disabled]="post.liked"
-          >
-            <ion-icon slot="start" [name]="post.liked ? 'heart' : 'heart-outline'"></ion-icon>
-            {{ post.likeCount }}
+        <div class="post-actions">
+          <!-- Like -->
+          <ion-button fill="clear" size="small" (click)="toggleLike(post, $event)">
+            <ion-icon [name]="post.liked ? 'heart' : 'heart-outline'"
+                      [color]="post.liked ? 'danger' : 'medium'"
+                      slot="start">
+            </ion-icon>
+            <ion-text color="medium">{{ post.likeCount }}</ion-text>
           </ion-button>
 
           <!-- Comment count -->
-          <ion-button fill="clear" size="small" color="medium" class="like-btn">
-            <ion-icon slot="start" name="chatbubble-outline"></ion-icon>
-            {{ post.commentCount }}
+          <ion-button fill="clear" size="small" (click)="openPost(post.id)">
+            <ion-icon name="chatbubble-outline" color="medium" slot="start"></ion-icon>
+            <ion-text color="medium">{{ post.commentCount }}</ion-text>
           </ion-button>
 
-          <ion-button fill="clear" size="small" color="primary" slot="end" style="margin-left: auto;">
-            Read more
-            <ion-icon slot="end" name="chevron-forward-outline"></ion-icon>
-          </ion-button>
+          <div class="spacer"></div>
+
+          <ion-icon name="chevron-forward-outline" color="medium"></ion-icon>
         </div>
       </ion-card-content>
     </ion-card>
-  </div>
+  }
 
-  <!-- FAB: create new post -->
-  <ion-fab vertical="bottom" horizontal="end" slot="fixed">
-    <ion-fab-button (click)="openCreateModal()" color="primary">
-      <ion-icon name="add"></ion-icon>
-    </ion-fab-button>
-  </ion-fab>
+  <!-- Empty state -->
+  @if (!isLoading() && posts().length === 0) {
+    <div class="empty-state">
+      <ion-icon name="chatbubble-outline" size="large" color="medium"></ion-icon>
+      <p>No posts yet. Be the first to post!</p>
+    </div>
+  }
 
-  <!-- ─── Create Post Modal ─────────────────────────────────────────────── -->
-  <ion-modal [isOpen]="showCreateModal" (didDismiss)="closeCreateModal()">
-    <ng-template>
-      <ion-header>
-        <ion-toolbar color="primary">
-          <ion-title>New Post</ion-title>
-          <ion-buttons slot="end">
-            <ion-button (click)="closeCreateModal()">
-              <ion-icon slot="icon-only" name="close"></ion-icon>
-            </ion-button>
-          </ion-buttons>
-        </ion-toolbar>
-      </ion-header>
-
-      <ion-content class="ion-padding">
-        <form [formGroup]="createPostForm" (ngSubmit)="submitPost()">
-
-          <ion-item>
-            <ion-label position="stacked">Title <ion-text color="danger">*</ion-text></ion-label>
-            <ion-input
-              formControlName="title"
-              placeholder="Enter a concise title…"
-              maxlength="200"
-              clearInput
-            ></ion-input>
-          </ion-item>
-          <ion-note
-            *ngIf="createPostForm.get('title')?.invalid && createPostForm.get('title')?.touched"
-            color="danger"
-            class="ion-padding-start"
-          >
-            Title is required (max 200 characters).
-          </ion-note>
-
-          <ion-item class="ion-margin-top">
-            <ion-label position="stacked">Body <ion-text color="danger">*</ion-text></ion-label>
-            <ion-textarea
-              formControlName="body"
-              placeholder="Write your post content here…"
-              rows="6"
-              maxlength="5000"
-              autoGrow="true"
-            ></ion-textarea>
-          </ion-item>
-          <ion-note
-            *ngIf="createPostForm.get('body')?.invalid && createPostForm.get('body')?.touched"
-            color="danger"
-            class="ion-padding-start"
-          >
-            Body is required (max 5000 characters).
-          </ion-note>
-
-          <ion-button
-            expand="block"
-            type="submit"
-            class="ion-margin-top"
-            [disabled]="createPostForm.invalid"
-          >
-            <ion-icon slot="start" name="send-outline"></ion-icon>
-            Publish Post
-          </ion-button>
-
-        </form>
-      </ion-content>
-    </ng-template>
-  </ion-modal>
-
+  <!-- Infinite scroll -->
+  @if (hasMore()) {
+    <ion-infinite-scroll (ionInfinite)="loadMore($event)">
+      <ion-infinite-scroll-content loadingText="Loading more…"></ion-infinite-scroll-content>
+    </ion-infinite-scroll>
+  }
 </ion-content>
+
+<!-- FAB to create post -->
+<ion-fab vertical="bottom" horizontal="end" slot="fixed">
+  <ion-fab-button color="primary" (click)="openCreatePost()" title="Create post">
+    <ion-icon name="add-outline"></ion-icon>
+  </ion-fab-button>
+</ion-fab>

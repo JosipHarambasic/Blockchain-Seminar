@@ -1,389 +1,239 @@
+/**
+ * ForumService
+ *
+ * Wraps the Forum smart contract via ethers.js v6.  Uses a read-only
+ * JsonRpcProvider for queries so they work before the user connects, and
+ * switches to the connected Signer for write transactions.
+ *
+ * Content (title + body) is NOT stored on-chain — it lives on IPFS.  The
+ * service delegates to IpfsService for upload / fetch and only sends the
+ * 32-byte digest on-chain.
+ */
 import { Injectable } from "@angular/core";
 import { ethers } from "ethers";
-import { Web3Service } from "./web3.service";
+import { WalletService } from "./web3.service";
+import { IpfsService } from "./ipfs.service";
 import { environment } from "../../environments/environment";
 
-// ─── Display models (bigint converted to number for template usage) ──────────
+// ─── Display models ──────────────────────────────────────────────────────────
 
 export interface PostDisplay {
-  id: number;
-  author: string;
-  authorShort: string;
-  title: string;
-  body: string;
-  timestamp: number;
+  id:                 number;
+  author:             string;
+  authorDisplay:      string;  // ENS name or shortened address
+  contentHash:        string;  // bytes32 hex (0x…)
+  title:              string;  // resolved from IPFS
+  body:               string;
+  timestamp:          number;
   timestampFormatted: string;
-  likeCount: number;
-  commentCount: number;
-  liked: boolean;
+  likeCount:          number;
+  commentCount:       number;
+  liked:              boolean;
 }
 
 export interface CommentDisplay {
-  id: number;
-  postId: number;
-  author: string;
-  authorShort: string;
-  body: string;
-  timestamp: number;
+  id:                 number;
+  postId:             number;
+  parentCommentId:    number;
+  author:             string;
+  authorDisplay:      string;
+  contentHash:        string;
+  title:              string;
+  body:               string;
+  timestamp:          number;
   timestampFormatted: string;
-  likeCount: number;
-  liked: boolean;
+  likeCount:          number;
+  liked:              boolean;
+  replyCount?:        number;  // populated lazily by CommentThreadComponent
+  replies?:           CommentDisplay[];
 }
 
-// ─── Contract ABI (matches Forum.sol) ───────────────────────────────────────
+// ─── ABI ─────────────────────────────────────────────────────────────────────
+// Human-readable ABI string form — compact and easy to maintain.
 
 const FORUM_ABI: ethers.InterfaceAbi = [
-  // ── Write functions ──────────────────────────────────────────────────────
-  {
-    inputs: [
-      { internalType: "string", name: "_title", type: "string" },
-      { internalType: "string", name: "_body",  type: "string" },
-    ],
-    name: "createPost",
-    outputs: [{ internalType: "uint256", name: "postId", type: "uint256" }],
-    stateMutability: "nonpayable",
-    type: "function",
-  },
-  {
-    inputs: [
-      { internalType: "uint256", name: "_postId", type: "uint256" },
-      { internalType: "string",  name: "_body",   type: "string"  },
-    ],
-    name: "createComment",
-    outputs: [{ internalType: "uint256", name: "commentId", type: "uint256" }],
-    stateMutability: "nonpayable",
-    type: "function",
-  },
-  {
-    inputs: [{ internalType: "uint256", name: "_postId", type: "uint256" }],
-    name: "likePost",
-    outputs: [],
-    stateMutability: "nonpayable",
-    type: "function",
-  },
-  {
-    inputs: [{ internalType: "uint256", name: "_commentId", type: "uint256" }],
-    name: "likeComment",
-    outputs: [],
-    stateMutability: "nonpayable",
-    type: "function",
-  },
-  // ── Read functions ───────────────────────────────────────────────────────
-  {
-    inputs: [],
-    name: "getAllPosts",
-    outputs: [
-      {
-        components: [
-          { internalType: "uint256", name: "id",           type: "uint256" },
-          { internalType: "address", name: "author",       type: "address" },
-          { internalType: "string",  name: "title",        type: "string"  },
-          { internalType: "string",  name: "body",         type: "string"  },
-          { internalType: "uint256", name: "timestamp",    type: "uint256" },
-          { internalType: "uint256", name: "likeCount",    type: "uint256" },
-          { internalType: "uint256", name: "commentCount", type: "uint256" },
-        ],
-        internalType: "struct Forum.Post[]",
-        name: "",
-        type: "tuple[]",
-      },
-    ],
-    stateMutability: "view",
-    type: "function",
-  },
-  {
-    inputs: [{ internalType: "uint256", name: "_postId", type: "uint256" }],
-    name: "getPost",
-    outputs: [
-      {
-        components: [
-          { internalType: "uint256", name: "id",           type: "uint256" },
-          { internalType: "address", name: "author",       type: "address" },
-          { internalType: "string",  name: "title",        type: "string"  },
-          { internalType: "string",  name: "body",         type: "string"  },
-          { internalType: "uint256", name: "timestamp",    type: "uint256" },
-          { internalType: "uint256", name: "likeCount",    type: "uint256" },
-          { internalType: "uint256", name: "commentCount", type: "uint256" },
-        ],
-        internalType: "struct Forum.Post",
-        name: "",
-        type: "tuple",
-      },
-    ],
-    stateMutability: "view",
-    type: "function",
-  },
-  {
-    inputs: [{ internalType: "uint256", name: "_postId", type: "uint256" }],
-    name: "getPostComments",
-    outputs: [
-      {
-        components: [
-          { internalType: "uint256", name: "id",        type: "uint256" },
-          { internalType: "uint256", name: "postId",    type: "uint256" },
-          { internalType: "address", name: "author",    type: "address" },
-          { internalType: "string",  name: "body",      type: "string"  },
-          { internalType: "uint256", name: "timestamp", type: "uint256" },
-          { internalType: "uint256", name: "likeCount", type: "uint256" },
-        ],
-        internalType: "struct Forum.Comment[]",
-        name: "",
-        type: "tuple[]",
-      },
-    ],
-    stateMutability: "view",
-    type: "function",
-  },
-  {
-    inputs: [
-      { internalType: "address", name: "_user",   type: "address" },
-      { internalType: "uint256", name: "_postId", type: "uint256" },
-    ],
-    name: "hasLikedPost",
-    outputs: [{ internalType: "bool", name: "", type: "bool" }],
-    stateMutability: "view",
-    type: "function",
-  },
-  {
-    inputs: [
-      { internalType: "address", name: "_user",      type: "address" },
-      { internalType: "uint256", name: "_commentId", type: "uint256" },
-    ],
-    name: "hasLikedComment",
-    outputs: [{ internalType: "bool", name: "", type: "bool" }],
-    stateMutability: "view",
-    type: "function",
-  },
-  { inputs: [], name: "postCount",    outputs: [{ internalType: "uint256", name: "", type: "uint256" }], stateMutability: "view", type: "function" },
-  { inputs: [], name: "commentCount", outputs: [{ internalType: "uint256", name: "", type: "uint256" }], stateMutability: "view", type: "function" },
-  // ── Events ───────────────────────────────────────────────────────────────
-  {
-    anonymous: false,
-    inputs: [
-      { indexed: true,  internalType: "uint256", name: "postId",    type: "uint256" },
-      { indexed: true,  internalType: "address", name: "author",    type: "address" },
-      { indexed: false, internalType: "string",  name: "title",     type: "string"  },
-      { indexed: false, internalType: "uint256", name: "timestamp", type: "uint256" },
-    ],
-    name: "PostCreated",
-    type: "event",
-  },
-  {
-    anonymous: false,
-    inputs: [
-      { indexed: true,  internalType: "uint256", name: "commentId", type: "uint256" },
-      { indexed: true,  internalType: "uint256", name: "postId",    type: "uint256" },
-      { indexed: true,  internalType: "address", name: "author",    type: "address" },
-      { indexed: false, internalType: "uint256", name: "timestamp", type: "uint256" },
-    ],
-    name: "CommentCreated",
-    type: "event",
-  },
-  {
-    anonymous: false,
-    inputs: [
-      { indexed: true,  internalType: "uint256", name: "postId",       type: "uint256" },
-      { indexed: true,  internalType: "address", name: "liker",        type: "address" },
-      { indexed: false, internalType: "uint256", name: "newLikeCount", type: "uint256" },
-    ],
-    name: "PostLiked",
-    type: "event",
-  },
-  {
-    anonymous: false,
-    inputs: [
-      { indexed: true,  internalType: "uint256", name: "commentId",    type: "uint256" },
-      { indexed: true,  internalType: "address", name: "liker",        type: "address" },
-      { indexed: false, internalType: "uint256", name: "newLikeCount", type: "uint256" },
-    ],
-    name: "CommentLiked",
-    type: "event",
-  },
+  // ── write ────────────────────────────────────────────────────────────────
+  "function createPost(bytes32 contentHash) returns (uint256)",
+  "function createComment(uint256 postId, uint256 parentCommentId, bytes32 contentHash) returns (uint256)",
+  "function likePost(uint256 postId)",
+  "function likeComment(uint256 commentId)",
+  // ── read ─────────────────────────────────────────────────────────────────
+  "function getPosts(uint256 offset, uint256 limit) view returns (tuple(uint256 id, address author, bytes32 contentHash, uint256 timestamp, uint256 likeCount, uint256 commentCount)[] posts, uint256 total)",
+  "function getPost(uint256 postId) view returns (tuple(uint256 id, address author, bytes32 contentHash, uint256 timestamp, uint256 likeCount, uint256 commentCount))",
+  "function getPostComments(uint256 postId) view returns (tuple(uint256 id, uint256 postId, uint256 parentCommentId, address author, bytes32 contentHash, uint256 timestamp, uint256 likeCount)[])",
+  "function getCommentReplies(uint256 commentId) view returns (tuple(uint256 id, uint256 postId, uint256 parentCommentId, address author, bytes32 contentHash, uint256 timestamp, uint256 likeCount)[])",
+  "function hasLikedPost(address user, uint256 postId) view returns (bool)",
+  "function hasLikedComment(address user, uint256 commentId) view returns (bool)",
+  "function postCount() view returns (uint256)",
+  "function commentCount() view returns (uint256)",
+  // ── events ───────────────────────────────────────────────────────────────
+  "event PostCreated(uint256 indexed postId, address indexed author, bytes32 contentHash, uint256 timestamp)",
+  "event CommentCreated(uint256 indexed commentId, uint256 indexed postId, uint256 parentCommentId, address author, bytes32 contentHash, uint256 timestamp)",
+  "event PostLiked(uint256 indexed postId, address indexed liker, uint256 newLikeCount)",
+  "event CommentLiked(uint256 indexed commentId, address indexed liker, uint256 newLikeCount)",
 ];
 
 // ─── Service ─────────────────────────────────────────────────────────────────
 
 @Injectable({ providedIn: "root" })
 export class ForumService {
-  // We hold two contract instances: a read-only one (provider) and a write one (signer).
-  // The read-only instance is initialised from the public RPC so posts are visible
-  // even before the user connects their wallet.
-  private readContract: ethers.Contract | null = null;
-  private writeContract: ethers.Contract | null = null;
+  private _readContract:  ethers.Contract | null = null;
+  private _writeContract: ethers.Contract | null = null;
 
-  constructor(private web3: Web3Service) {
-    // Initialise read-only contract with the public RPC
-    this.initReadContract();
-
-    // When the account connects/changes, wire up the write contract
-    this.web3.account$.subscribe((account) => {
-      if (account) {
-        this.initWriteContract();
-      } else {
-        this.writeContract = null;
-      }
-    });
+  constructor(
+    private wallet: WalletService,
+    private ipfs:   IpfsService,
+  ) {
+    this._initRead();
   }
 
-  private initReadContract(): void {
+  // ─── Initialisation ───────────────────────────────────────────────────────
+
+  private _initRead(): void {
     try {
       const provider = new ethers.JsonRpcProvider(environment.rpcUrl);
-      this.readContract = new ethers.Contract(
-        environment.contractAddress,
-        FORUM_ABI,
-        provider
-      );
-    } catch {
-      // RPC might not be reachable in dev — will retry after wallet connect
-    }
+      this._readContract = new ethers.Contract(environment.contractAddress, FORUM_ABI, provider);
+    } catch { /* RPC unreachable on startup */ }
   }
 
-  private initWriteContract(): void {
-    const signer = this.web3.getSigner();
-    if (signer) {
-      this.writeContract = new ethers.Contract(
-        environment.contractAddress,
-        FORUM_ABI,
-        signer
-      );
-      // Use the signer's provider for reads too (keeps everything in sync)
-      this.readContract = new ethers.Contract(
-        environment.contractAddress,
-        FORUM_ABI,
-        signer
-      );
-    }
+  /** Call after wallet connects to upgrade read/write contracts to the signer. */
+  connectSigner(): void {
+    const signer = this.wallet.getSigner();
+    if (!signer) return;
+    this._writeContract = new ethers.Contract(environment.contractAddress, FORUM_ABI, signer);
+    this._readContract  = new ethers.Contract(environment.contractAddress, FORUM_ABI, signer);
   }
 
-  private getRead(): ethers.Contract {
-    if (!this.readContract) throw new Error("Contract not initialised");
-    return this.readContract;
+  private _read(): ethers.Contract {
+    if (!this._readContract) this._initRead();
+    if (!this._readContract) throw new Error("Contract not initialised — check contractAddress in environment.ts");
+    return this._readContract;
   }
 
-  private getWrite(): ethers.Contract {
-    if (!this.writeContract)
-      throw new Error("Wallet not connected. Please connect MetaMask first.");
-    return this.writeContract;
+  private _write(): ethers.Contract {
+    if (!this._writeContract) throw new Error("Wallet not connected. Please connect MetaMask first.");
+    return this._writeContract;
   }
 
-  // ─── Mapping helpers ──────────────────────────────────────────────────────
+  // ─── Helpers ─────────────────────────────────────────────────────────────
 
-  private mapPost(raw: any, liked = false): PostDisplay {
-    const ts = Number(raw.timestamp);
+  private _fmt(ts: number): string {
+    return new Date(ts * 1000).toLocaleString();
+  }
+
+  private async _displayAddr(address: string): Promise<string> {
+    try {
+      const ens = await this._read().runner?.provider?.lookupAddress(address);
+      if (ens) return ens;
+    } catch { /* ignore */ }
+    return this.wallet.shortenAddress(address);
+  }
+
+  private async _mapRawPost(raw: any, userAddr: string | null): Promise<PostDisplay> {
+    const liked   = userAddr ? await this._read().hasLikedPost(userAddr, raw.id) : false;
+    const hashHex = raw.contentHash as string;
+    let title = "(loading…)", body = "";
+    try {
+      const c = await this.ipfs.fetchByBytes32(hashHex);
+      title = c.title; body = c.body;
+    } catch { /* IPFS not yet available */ }
     return {
-      id:                 Number(raw.id),
-      author:             raw.author,
-      authorShort:        this.web3.shortenAddress(raw.author),
-      title:              raw.title,
-      body:               raw.body,
-      timestamp:          ts,
-      timestampFormatted: this.web3.formatTimestamp(ts),
-      likeCount:          Number(raw.likeCount),
-      commentCount:       Number(raw.commentCount),
-      liked,
+      id: Number(raw.id), author: raw.author as string,
+      authorDisplay: await this._displayAddr(raw.author),
+      contentHash: hashHex, title, body,
+      timestamp: Number(raw.timestamp),
+      timestampFormatted: this._fmt(Number(raw.timestamp)),
+      likeCount: Number(raw.likeCount),
+      commentCount: Number(raw.commentCount), liked,
     };
   }
 
-  private mapComment(raw: any, liked = false): CommentDisplay {
-    const ts = Number(raw.timestamp);
+  private async _mapRawComment(raw: any, userAddr: string | null): Promise<CommentDisplay> {
+    const liked   = userAddr ? await this._read().hasLikedComment(userAddr, raw.id) : false;
+    const hashHex = raw.contentHash as string;
+    let title = "", body = "(loading…)";
+    try {
+      const c = await this.ipfs.fetchByBytes32(hashHex);
+      title = c.title ?? ""; body = c.body;
+    } catch { /* ignore */ }
     return {
-      id:                 Number(raw.id),
-      postId:             Number(raw.postId),
-      author:             raw.author,
-      authorShort:        this.web3.shortenAddress(raw.author),
-      body:               raw.body,
-      timestamp:          ts,
-      timestampFormatted: this.web3.formatTimestamp(ts),
-      likeCount:          Number(raw.likeCount),
-      liked,
+      id: Number(raw.id), postId: Number(raw.postId),
+      parentCommentId: Number(raw.parentCommentId),
+      author: raw.author as string,
+      authorDisplay: await this._displayAddr(raw.author),
+      contentHash: hashHex, title, body,
+      timestamp: Number(raw.timestamp),
+      timestampFormatted: this._fmt(Number(raw.timestamp)),
+      likeCount: Number(raw.likeCount), liked,
     };
   }
 
   // ─── Read methods ─────────────────────────────────────────────────────────
 
-  /**
-   * Fetches all posts and enriches each with the current user's like status.
-   */
-  async getAllPosts(): Promise<PostDisplay[]> {
-    const raws: any[] = await this.getRead().getAllPosts();
-    const account = this.web3.getCurrentAccount();
-
-    const posts = await Promise.all(
-      raws.map(async (raw) => {
-        let liked = false;
-        if (account) {
-          liked = await this.getRead().hasLikedPost(account, raw.id);
-        }
-        return this.mapPost(raw, liked);
-      })
-    );
-
-    // Return newest first
-    return posts.reverse();
+  async getPosts(offset: number, limit: number): Promise<{ posts: PostDisplay[]; total: number }> {
+    const userAddr = this.wallet.address();
+    const [raws, total]: [any[], bigint] = await this._read().getPosts(offset, limit);
+    const posts = await Promise.all(raws.map((r) => this._mapRawPost(r, userAddr)));
+    return { posts, total: Number(total) };
   }
 
-  /**
-   * Fetches a single post by ID.
-   */
   async getPost(postId: number): Promise<PostDisplay> {
-    const raw = await this.getRead().getPost(postId);
-    const account = this.web3.getCurrentAccount();
-    let liked = false;
-    if (account) {
-      liked = await this.getRead().hasLikedPost(account, postId);
-    }
-    return this.mapPost(raw, liked);
+    const userAddr = this.wallet.address();
+    const raw = await this._read().getPost(postId);
+    return this._mapRawPost(raw, userAddr);
   }
 
-  /**
-   * Fetches all comments for a post with like status for the current user.
-   */
   async getPostComments(postId: number): Promise<CommentDisplay[]> {
-    const raws: any[] = await this.getRead().getPostComments(postId);
-    const account = this.web3.getCurrentAccount();
+    const userAddr = this.wallet.address();
+    const raws: any[] = await this._read().getPostComments(postId);
+    return Promise.all(raws.map((r) => this._mapRawComment(r, userAddr)));
+  }
 
-    return Promise.all(
-      raws.map(async (raw) => {
-        let liked = false;
-        if (account) {
-          liked = await this.getRead().hasLikedComment(account, raw.id);
-        }
-        return this.mapComment(raw, liked);
-      })
-    );
+  async getCommentReplies(commentId: number): Promise<CommentDisplay[]> {
+    const userAddr = this.wallet.address();
+    const raws: any[] = await this._read().getCommentReplies(commentId);
+    return Promise.all(raws.map((r) => this._mapRawComment(r, userAddr)));
   }
 
   // ─── Write methods ────────────────────────────────────────────────────────
 
-  /**
-   * Submits a new post transaction and waits for it to be mined.
-   */
-  async createPost(title: string, body: string): Promise<void> {
-    const tx = await this.getWrite().createPost(title, body);
-    await tx.wait();
+  /** Uploads to IPFS then calls createPost on-chain. Returns the new post ID. */
+  async createPost(title: string, body: string): Promise<number> {
+    const { bytes32 } = await this.ipfs.upload({ title, body });
+    const tx = await this._write().createPost(bytes32);
+    const receipt = await tx.wait();
+    const iface = this._write().interface;
+    for (const log of receipt.logs) {
+      try {
+        const p = iface.parseLog(log);
+        if (p?.name === "PostCreated") return Number(p.args.postId);
+      } catch { /* skip */ }
+    }
+    return 0;
   }
 
-  /**
-   * Submits a new comment transaction and waits for it to be mined.
-   */
-  async createComment(postId: number, body: string): Promise<void> {
-    const tx = await this.getWrite().createComment(postId, body);
-    await tx.wait();
+  /** Uploads to IPFS then calls createComment. parentCommentId=0 for top-level. */
+  async createComment(postId: number, parentCommentId: number, body: string): Promise<number> {
+    const { bytes32 } = await this.ipfs.upload({ title: "", body });
+    const tx = await this._write().createComment(postId, parentCommentId, bytes32);
+    const receipt = await tx.wait();
+    const iface = this._write().interface;
+    for (const log of receipt.logs) {
+      try {
+        const p = iface.parseLog(log);
+        if (p?.name === "CommentCreated") return Number(p.args.commentId);
+      } catch { /* skip */ }
+    }
+    return 0;
   }
 
-  /**
-   * Likes a post transaction and waits for it to be mined.
-   */
   async likePost(postId: number): Promise<void> {
-    const tx = await this.getWrite().likePost(postId);
+    const tx = await this._write().likePost(postId);
     await tx.wait();
   }
 
-  /**
-   * Likes a comment transaction and waits for it to be mined.
-   */
   async likeComment(commentId: number): Promise<void> {
-    const tx = await this.getWrite().likeComment(commentId);
+    const tx = await this._write().likeComment(commentId);
     await tx.wait();
   }
 }

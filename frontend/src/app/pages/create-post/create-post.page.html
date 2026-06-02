@@ -1,0 +1,63 @@
+<ion-header>
+  <ion-toolbar color="primary">
+    <ion-buttons slot="start">
+      <ion-back-button defaultHref="/"></ion-back-button>
+    </ion-buttons>
+    <ion-title>New Post</ion-title>
+    <ion-buttons slot="end">
+      @if (!wallet.address()) {
+        <ion-button fill="outline" color="light" (click)="connectWallet()">Connect Wallet</ion-button>
+      }
+    </ion-buttons>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content class="ion-padding">
+  @if (!wallet.address()) {
+    <div class="wallet-notice">
+      <p>You need to connect your wallet to publish a post.</p>
+      <ion-button (click)="connectWallet()">Connect Wallet</ion-button>
+    </div>
+  }
+
+  <ion-item>
+    <ion-label position="stacked">Title <ion-note color="danger">*</ion-note></ion-label>
+    <ion-input
+      [(ngModel)]="title"
+      placeholder="What is your post about?"
+      maxlength="200"
+      clearInput>
+    </ion-input>
+  </ion-item>
+  <ion-note class="char-count" color="medium">{{ title.length }}/200</ion-note>
+
+  <ion-item class="body-item">
+    <ion-label position="stacked">Body <ion-note color="danger">*</ion-note></ion-label>
+    <ion-textarea
+      [(ngModel)]="body"
+      placeholder="Write your post content here…"
+      rows="8"
+      autoGrow="true"
+      maxlength="50000">
+    </ion-textarea>
+  </ion-item>
+  <ion-note class="char-count" color="medium">{{ body.length }}/50000</ion-note>
+
+  <ion-button
+    expand="block"
+    class="submit-btn"
+    [disabled]="!canSubmit"
+    (click)="submit()">
+    @if (isSending()) {
+      <ion-spinner name="crescent" slot="start"></ion-spinner>
+      Publishing…
+    } @else {
+      <ion-icon name="send-outline" slot="start"></ion-icon>
+      Publish Post
+    }
+  </ion-button>
+
+  <p class="ipfs-note" color="medium">
+    Your post content will be stored on IPFS; only the content hash is stored on-chain.
+  </p>
+</ion-content>

@@ -1,0 +1,15 @@
+{
+  "name": "forum-subgraph",
+  "version": "1.0.0",
+  "description": "The Graph subgraph for the Forum smart contract",
+  "scripts": {
+    "codegen": "graph codegen",
+    "build":   "graph build",
+    "deploy":  "graph deploy --node https://api.thegraph.com/deploy/ forum-subgraph",
+    "deploy:local": "graph deploy --node http://localhost:8020/ --ipfs http://localhost:5001 forum-subgraph"
+  },
+  "dependencies": {
+    "@graphprotocol/graph-cli": "^0.80.0",
+    "@graphprotocol/graph-ts": "^0.35.0"
+  }
+}

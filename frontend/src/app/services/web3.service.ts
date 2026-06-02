@@ -1,119 +1,167 @@
-import { Injectable } from "@angular/core";
-import { BehaviorSubject } from "rxjs";
+/**
+ * WalletService
+ *
+ * Wraps ethers.js v6 BrowserProvider (MetaMask) and exposes the connected
+ * wallet state via Angular signals so components can react without needing
+ * RxJS subscriptions.  ENS name resolution is attempted on every connect /
+ * account change; a null ensName means the address has no reverse record.
+ */
+import { Injectable, signal, computed } from "@angular/core";
 import { ethers } from "ethers";
 import { environment } from "../../environments/environment";
 
 declare let window: Window & { ethereum?: any };
 
 @Injectable({ providedIn: "root" })
-export class Web3Service {
-  private provider: ethers.BrowserProvider | null = null;
-  private signer: ethers.JsonRpcSigner | null = null;
+export class WalletService {
+  // ─── Signals ────────────────────────────────────────────────────────────────
 
-  private accountSubject = new BehaviorSubject<string | null>(null);
-  /** Observable that emits the currently connected account address (or null). */
-  public account$ = this.accountSubject.asObservable();
+  /** Raw hex address of the connected account, or null if disconnected. */
+  readonly address = signal<string | null>(null);
 
-  // ─── Connection ─────────────────────────────────────────────────────────
+  /** ENS name for the connected address (e.g. "alice.eth"), or null. */
+  readonly ensName = signal<string | null>(null);
 
-  /**
-   * Requests MetaMask permission and connects to the first account.
-   * Switches to the UZHETH PoS network if needed.
-   * @returns The connected account address.
-   */
-  async connect(): Promise<string> {
-    if (!window.ethereum) {
-      throw new Error(
-        "MetaMask not detected. Please install the MetaMask browser extension."
-      );
-    }
+  /** True while a connection request is in flight. */
+  readonly connecting = signal(false);
 
-    this.provider = new ethers.BrowserProvider(window.ethereum);
+  /** Derived: short display label — ENS name if available, else "0x1234…abcd". */
+  readonly displayName = computed(() => {
+    const ens = this.ensName();
+    const addr = this.address();
+    if (ens) return ens;
+    if (addr) return this.shortenAddress(addr);
+    return null;
+  });
 
-    // Request account access
-    await this.provider.send("eth_requestAccounts", []);
+  // ─── Private state ───────────────────────────────────────────────────────────
 
-    // Ensure we are on the correct network
-    await this.ensureCorrectNetwork();
+  private _provider: ethers.BrowserProvider | null = null;
+  private _signer:   ethers.JsonRpcSigner   | null = null;
 
-    this.signer = await this.provider.getSigner();
-    const address = await this.signer.getAddress();
-    this.accountSubject.next(address);
+  // ─── Public accessors ────────────────────────────────────────────────────────
 
-    // React to account and chain changes
-    window.ethereum.on("accountsChanged", async (accounts: string[]) => {
-      if (accounts.length > 0) {
-        this.signer = await this.provider!.getSigner();
-        this.accountSubject.next(accounts[0]);
-      } else {
-        this.signer = null;
-        this.accountSubject.next(null);
-      }
-    });
-
-    window.ethereum.on("chainChanged", () => {
-      // Reload so the provider/signer are re-initialised for the new chain
-      window.location.reload();
-    });
-
-    return address;
-  }
-
-  // ─── Network switching ───────────────────────────────────────────────────
-
-  private async ensureCorrectNetwork(): Promise<void> {
-    const network = await this.provider!.getNetwork();
-    if (Number(network.chainId) !== environment.networkChainId) {
-      try {
-        await this.provider!.send("wallet_switchEthereumChain", [
-          { chainId: "0x" + environment.networkChainId.toString(16) },
-        ]);
-      } catch (switchError: any) {
-        // Chain not yet added to MetaMask — add it
-        if (switchError.code === 4902) {
-          await this.provider!.send("wallet_addEthereumChain", [
-            {
-              chainId: "0x" + environment.networkChainId.toString(16),
-              chainName: environment.networkName,
-              rpcUrls: [environment.rpcUrl],
-              nativeCurrency: { name: "UZHETHs", symbol: "UZHETHs", decimals: 18 },
-            },
-          ]);
-        } else {
-          throw switchError;
-        }
-      }
-    }
-  }
-
-  // ─── Accessors ──────────────────────────────────────────────────────────
-
+  /** Returns the current ethers signer (or null if not connected). */
   getSigner(): ethers.JsonRpcSigner | null {
-    return this.signer;
+    return this._signer;
   }
 
+  /** Returns the current BrowserProvider (or null). */
   getProvider(): ethers.BrowserProvider | null {
-    return this.provider;
+    return this._provider;
   }
 
   isConnected(): boolean {
-    return this.accountSubject.value !== null;
+    return this.address() !== null;
   }
 
-  getCurrentAccount(): string | null {
-    return this.accountSubject.value;
+  // ─── Connection ──────────────────────────────────────────────────────────────
+
+  /**
+   * Requests MetaMask permission, switches to the correct network, then
+   * populates the signals.  Safe to call multiple times.
+   */
+  async connect(): Promise<string> {
+    if (!window.ethereum) {
+      throw new Error("MetaMask not detected. Please install the MetaMask browser extension.");
+    }
+
+    this.connecting.set(true);
+    try {
+      this._provider = new ethers.BrowserProvider(window.ethereum);
+
+      await this._provider.send("eth_requestAccounts", []);
+      await this._ensureCorrectNetwork();
+
+      this._signer = await this._provider.getSigner();
+      const addr   = await this._signer.getAddress();
+      this.address.set(addr);
+
+      // Attempt ENS reverse-lookup (only works on mainnet / testnets with ENS).
+      this._resolveEns(addr);
+
+      // React to account / chain changes.
+      window.ethereum.on("accountsChanged", (accounts: string[]) => {
+        if (accounts.length > 0) {
+          this._provider!.getSigner().then((s) => {
+            this._signer = s;
+            this.address.set(accounts[0]);
+            this._resolveEns(accounts[0]);
+          });
+        } else {
+          this._signer = null;
+          this.address.set(null);
+          this.ensName.set(null);
+        }
+      });
+
+      window.ethereum.on("chainChanged", () => window.location.reload());
+
+      return addr;
+    } finally {
+      this.connecting.set(false);
+    }
   }
 
-  // ─── Utilities ──────────────────────────────────────────────────────────
+  // ─── Network switching ────────────────────────────────────────────────────────
 
-  /** Returns a human-readable shortened address, e.g. 0x1234...abcd */
+  private async _ensureCorrectNetwork(): Promise<void> {
+    const network = await this._provider!.getNetwork();
+    if (Number(network.chainId) === environment.networkChainId) return;
+
+    try {
+      await this._provider!.send("wallet_switchEthereumChain", [
+        { chainId: "0x" + environment.networkChainId.toString(16) },
+      ]);
+    } catch (err: any) {
+      // Error 4902 — chain not yet added to MetaMask; add it automatically.
+      if (err.code === 4902) {
+        await this._provider!.send("wallet_addEthereumChain", [
+          {
+            chainId:         "0x" + environment.networkChainId.toString(16),
+            chainName:        environment.networkName,
+            rpcUrls:         [environment.rpcUrl],
+            nativeCurrency:  { name: "UZHETHs", symbol: "UZHETHs", decimals: 18 },
+          },
+        ]);
+      } else {
+        throw err;
+      }
+    }
+  }
+
+  // ─── ENS ─────────────────────────────────────────────────────────────────────
+
+  /**
+   * Attempts an ENS reverse lookup.  Never throws — silently clears ensName
+   * if the lookup fails or returns null.
+   */
+  private async _resolveEns(address: string): Promise<void> {
+    try {
+      const name = await this._provider!.lookupAddress(address);
+      this.ensName.set(name ?? null);
+    } catch {
+      this.ensName.set(null);
+    }
+  }
+
+  /**
+   * Resolves an ENS name to an address, or returns the input unchanged if it
+   * is already an address or lookup fails.
+   */
+  async resolveAddress(nameOrAddress: string): Promise<string> {
+    if (ethers.isAddress(nameOrAddress)) return nameOrAddress;
+    try {
+      const resolved = await this._provider?.resolveName(nameOrAddress);
+      return resolved ?? nameOrAddress;
+    } catch {
+      return nameOrAddress;
+    }
+  }
+
+  // ─── Utilities ───────────────────────────────────────────────────────────────
+
   shortenAddress(address: string): string {
-    if (!address || address.length < 10) return address;
-    return `${address.slice(0, 6)}...${address.slice(-4)}`;
-  }
-
-  /** Formats a Unix timestamp (seconds) to a locale date-time string. */
-  formatTimestamp(ts: number): string {
-    return new Date(ts * 1000).toLocaleString();
+    return address.slice(0, 6) + "…" + address.slice(-4);
   }
 }

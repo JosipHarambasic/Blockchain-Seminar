@@ -1,0 +1,35 @@
+specVersion: 0.0.5
+schema:
+  file: ./schema.graphql
+dataSources:
+  - kind: ethereum
+    name: Forum
+    network: mainnet          # change to "localhost" for local Hardhat, or your target network name
+    source:
+      # Replace with the deployed contract address after running deploy.js
+      address: "0x0000000000000000000000000000000000000000"
+      abi: Forum
+      startBlock: 0           # set to the deployment block to avoid scanning from genesis
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - Post
+        - Comment
+        - User
+        - PostLike
+        - CommentLike
+      abis:
+        - name: Forum
+          file: ./abis/Forum.json
+      eventHandlers:
+        - event: PostCreated(indexed uint256,indexed address,bytes32,uint256)
+          handler: handlePostCreated
+        - event: CommentCreated(indexed uint256,indexed uint256,uint256,address,bytes32,uint256)
+          handler: handleCommentCreated
+        - event: PostLiked(indexed uint256,indexed address,uint256)
+          handler: handlePostLiked
+        - event: CommentLiked(indexed uint256,indexed address,uint256)
+          handler: handleCommentLiked
+      file: ./src/mappings.ts

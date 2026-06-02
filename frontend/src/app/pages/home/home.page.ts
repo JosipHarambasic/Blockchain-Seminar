@@ -1,188 +1,148 @@
-import { Component, OnInit, OnDestroy } from "@angular/core";
-import { CommonModule } from "@angular/common";
-import { FormBuilder, FormGroup, Validators, ReactiveFormsModule } from "@angular/forms";
-import { Router } from "@angular/router";
-import { AlertController, LoadingController, ToastController } from "@ionic/angular/standalone";
 import {
-  IonHeader, IonToolbar, IonTitle, IonContent, IonButtons, IonButton, IonChip,
-  IonLabel, IonIcon, IonCard, IonCardHeader, IonCardTitle, IonCardSubtitle,
-  IonCardContent, IonFab, IonFabButton, IonRefresher, IonRefresherContent,
-  IonSkeletonText, IonModal, IonItem, IonInput, IonTextarea, IonNote, IonText,
+  Component, OnInit, signal, computed, inject,
+} from "@angular/core";
+import { CommonModule }  from "@angular/common";
+import { Router }        from "@angular/router";
+import {
+  IonHeader, IonToolbar, IonTitle, IonContent, IonButtons, IonButton,
+  IonCard, IonCardHeader, IonCardTitle, IonCardSubtitle, IonCardContent,
+  IonFab, IonFabButton, IonRefresher, IonRefresherContent,
+  IonSkeletonText, IonIcon, IonLabel, IonChip, IonText, IonInfiniteScroll,
+  IonInfiniteScrollContent, IonBadge,
+  ToastController, LoadingController,
 } from "@ionic/angular/standalone";
 import { addIcons } from "ionicons";
 import {
-  chatbubblesOutline, walletOutline, checkmarkCircleOutline, heartOutline,
-  heart, chatbubbleOutline, chevronForwardOutline, add, sendOutline, close,
+  addOutline, heartOutline, heart, chatbubbleOutline,
+  chevronForwardOutline, walletOutline, refreshOutline,
 } from "ionicons/icons";
-import { Subscription } from "rxjs";
 
-import { Web3Service } from "../../services/web3.service";
+import { WalletService }   from "../../services/web3.service";
 import { ForumService, PostDisplay } from "../../services/forum.service";
+
+const PAGE_SIZE = 10;
 
 @Component({
   selector: "app-home",
   templateUrl: "home.page.html",
-  styleUrls: ["home.page.scss"],
+  styleUrls:  ["home.page.scss"],
   standalone: true,
   imports: [
-    CommonModule, ReactiveFormsModule,
-    IonHeader, IonToolbar, IonTitle, IonContent, IonButtons, IonButton, IonChip,
-    IonLabel, IonIcon, IonCard, IonCardHeader, IonCardTitle, IonCardSubtitle,
-    IonCardContent, IonFab, IonFabButton, IonRefresher, IonRefresherContent,
-    IonSkeletonText, IonModal, IonItem, IonInput, IonTextarea, IonNote, IonText,
+    CommonModule,
+    IonHeader, IonToolbar, IonTitle, IonContent, IonButtons, IonButton,
+    IonCard, IonCardHeader, IonCardTitle, IonCardSubtitle, IonCardContent,
+    IonFab, IonFabButton, IonRefresher, IonRefresherContent,
+    IonSkeletonText, IonIcon, IonLabel, IonChip, IonText, IonInfiniteScroll,
+    IonInfiniteScrollContent, IonBadge,
   ],
 })
-export class HomePage implements OnInit, OnDestroy {
-  posts: PostDisplay[] = [];
-  account: string | null = null;
-  accountShort: string | null = null;
-  isLoading = false;
-  showCreateModal = false;
+export class HomePage implements OnInit {
+  // ── DI ──────────────────────────────────────────────────────────────────
+  readonly wallet  = inject(WalletService);
+  private  forum   = inject(ForumService);
+  private  router  = inject(Router);
+  private  toast   = inject(ToastController);
+  private  loading = inject(LoadingController);
 
-  createPostForm: FormGroup;
+  // ── State ────────────────────────────────────────────────────────────────
+  posts     = signal<PostDisplay[]>([]);
+  total     = signal(0);
+  isLoading = signal(false);
+  hasMore   = computed(() => this.posts().length < this.total());
 
-  private accountSub!: Subscription;
+  // ── Skeletons for initial load ───────────────────────────────────────────
+  readonly skeletons = Array(5);
 
-  constructor(
-    private web3: Web3Service,
-    private forum: ForumService,
-    private router: Router,
-    private fb: FormBuilder,
-    private alertCtrl: AlertController,
-    private loadingCtrl: LoadingController,
-    private toastCtrl: ToastController
-  ) {
+  constructor() {
     addIcons({
-      chatbubblesOutline, walletOutline, checkmarkCircleOutline, heartOutline,
-      heart, chatbubbleOutline, chevronForwardOutline, add, sendOutline, close,
-    });
-    this.createPostForm = this.fb.group({
-      title: ["", [Validators.required, Validators.maxLength(200)]],
-      body: ["", [Validators.required, Validators.maxLength(5000)]],
+      addOutline, heartOutline, heart, chatbubbleOutline,
+      chevronForwardOutline, walletOutline, refreshOutline,
     });
   }
 
   ngOnInit(): void {
-    this.accountSub = this.web3.account$.subscribe((acc) => {
-      this.account = acc;
-      this.accountShort = acc ? this.web3.shortenAddress(acc) : null;
-      // Reload posts to update like status when account changes
-      this.loadPosts();
-    });
-    this.loadPosts();
+    this.loadPosts(true);
   }
 
-  ngOnDestroy(): void {
-    this.accountSub?.unsubscribe();
-  }
+  // ─── Data loading ─────────────────────────────────────────────────────────
 
-  // ─── Wallet ──────────────────────────────────────────────────────────────
-
-  async connectWallet(): Promise<void> {
-    const loading = await this.loadingCtrl.create({ message: "Connecting wallet…" });
-    await loading.present();
+  async loadPosts(reset = false): Promise<void> {
+    if (this.isLoading()) return;
+    this.isLoading.set(true);
     try {
-      await this.web3.connect();
-      await this.showToast("Wallet connected!", "success");
+      const offset = reset ? 0 : this.posts().length;
+      const { posts, total } = await this.forum.getPosts(offset, PAGE_SIZE);
+      this.total.set(total);
+      this.posts.update((existing) => reset ? posts : [...existing, ...posts]);
     } catch (err: any) {
-      await this.showAlert("Connection failed", err?.message ?? String(err));
+      await this._showToast(err?.message ?? "Failed to load posts", "danger");
     } finally {
-      await loading.dismiss();
+      this.isLoading.set(false);
     }
   }
 
-  // ─── Posts ───────────────────────────────────────────────────────────────
-
-  async loadPosts(event?: any): Promise<void> {
-    this.isLoading = true;
-    try {
-      this.posts = await this.forum.getAllPosts();
-    } catch (err: any) {
-      await this.showAlert("Error loading posts", err?.message ?? String(err));
-    } finally {
-      this.isLoading = false;
-      if (event) event.target.complete();
-    }
+  async handleRefresh(event: CustomEvent): Promise<void> {
+    await this.loadPosts(true);
+    (event.target as HTMLIonRefresherElement).complete();
   }
+
+  async loadMore(event: CustomEvent): Promise<void> {
+    await this.loadPosts(false);
+    (event.target as HTMLIonInfiniteScrollElement).complete();
+  }
+
+  // ─── Navigation ───────────────────────────────────────────────────────────
 
   openPost(postId: number): void {
     this.router.navigate(["/post", postId]);
   }
 
-  // ─── Create post modal ───────────────────────────────────────────────────
-
-  openCreateModal(): void {
-    if (!this.account) {
-      this.showAlert("Not connected", "Please connect your wallet before posting.");
-      return;
-    }
-    this.createPostForm.reset();
-    this.showCreateModal = true;
+  openCreatePost(): void {
+    this.router.navigate(["/create"]);
   }
 
-  closeCreateModal(): void {
-    this.showCreateModal = false;
-  }
+  // ─── Wallet ───────────────────────────────────────────────────────────────
 
-  async submitPost(): Promise<void> {
-    if (this.createPostForm.invalid) return;
-
-    const { title, body } = this.createPostForm.value;
-    const loading = await this.loadingCtrl.create({ message: "Submitting post to blockchain…" });
-    await loading.present();
-
+  async connectWallet(): Promise<void> {
+    const loader = await this.loading.create({ message: "Connecting wallet…" });
+    await loader.present();
     try {
-      await this.forum.createPost(title.trim(), body.trim());
-      this.showCreateModal = false;
-      await this.showToast("Post created successfully!", "success");
-      await this.loadPosts();
+      await this.wallet.connect();
+      this.forum.connectSigner();
+      await this.loadPosts(true);
     } catch (err: any) {
-      await this.showAlert("Transaction failed", err?.message ?? String(err));
+      await this._showToast(err?.message ?? "Wallet connection failed", "danger");
     } finally {
-      await loading.dismiss();
+      await loader.dismiss();
     }
   }
 
-  // ─── Like ────────────────────────────────────────────────────────────────
+  // ─── Likes ────────────────────────────────────────────────────────────────
 
-  async likePost(event: Event, post: PostDisplay): Promise<void> {
+  async toggleLike(post: PostDisplay, event: Event): Promise<void> {
     event.stopPropagation();
-
-    if (!this.account) {
-      await this.showAlert("Not connected", "Please connect your wallet to like posts.");
+    if (!this.wallet.address()) {
+      await this._showToast("Connect your wallet to like posts", "warning");
       return;
     }
-    if (post.liked) return;
-
-    const loading = await this.loadingCtrl.create({ message: "Sending like…" });
-    await loading.present();
-
+    if (post.liked) return; // already liked — contract reverts on double-like
     try {
       await this.forum.likePost(post.id);
-      post.likeCount++;
-      post.liked = true;
-      await this.showToast("Liked!", "success");
+      // Optimistically update
+      this.posts.update((all) =>
+        all.map((p) =>
+          p.id === post.id ? { ...p, liked: true, likeCount: p.likeCount + 1 } : p
+        )
+      );
     } catch (err: any) {
-      await this.showAlert("Transaction failed", err?.message ?? String(err));
-    } finally {
-      await loading.dismiss();
+      await this._showToast(err?.message ?? "Like failed", "danger");
     }
   }
 
   // ─── Helpers ─────────────────────────────────────────────────────────────
 
-  private async showToast(message: string, color: string): Promise<void> {
-    const toast = await this.toastCtrl.create({
-      message,
-      color,
-      duration: 2000,
-      position: "bottom",
-    });
-    await toast.present();
-  }
-
-  private async showAlert(header: string, message: string): Promise<void> {
-    const alert = await this.alertCtrl.create({ header, message, buttons: ["OK"] });
-    await alert.present();
+  private async _showToast(message: string, color: string): Promise<void> {
+    const t = await this.toast.create({ message, color, duration: 3000, position: "bottom" });
+    await t.present();
   }
 }

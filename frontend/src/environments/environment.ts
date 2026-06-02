@@ -1,17 +1,24 @@
 // ─── Development environment ────────────────────────────────────────────────
 // After deploying the contract run:
 //   npx hardhat run scripts/deploy.js --network uzheth_pos
-// and paste the printed address below.
+// and paste the printed address into contractAddress below.
 
 export const environment = {
   production: false,
 
   // UZHETH PoS network configuration
-  // Chain ID: obtain from your course materials (PoW = 702, PoS may differ)
   networkChainId: 702,
   networkName: "UZHETH PoS",
   rpcUrl: "https://rpc.uzheths.ifi.uzh.ch",
 
   // Deployed Forum contract address — update after running deploy.js
   contractAddress: "0x0000000000000000000000000000000000000000",
+
+  // The Graph subgraph endpoint for the Forum contract.
+  // Replace with your deployed subgraph URL from https://thegraph.com/hosted-service/
+  // or a local Graph Node: http://localhost:8000/subgraphs/name/forum-subgraph
+  subgraphUrl: "https://api.thegraph.com/subgraphs/name/YOUR_GITHUB_USER/forum-subgraph",
+
+  // IPFS gateway used for fallback reads (if the local Helia node doesn't have the block).
+  ipfsGateway: "https://dweb.link/ipfs/",
 };

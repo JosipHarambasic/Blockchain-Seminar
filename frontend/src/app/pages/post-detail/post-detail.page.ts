@@ -1,218 +1,139 @@
-import { Component, OnInit, OnDestroy } from "@angular/core";
-import { CommonModule } from "@angular/common";
-import { ActivatedRoute } from "@angular/router";
-import { FormBuilder, FormGroup, Validators, ReactiveFormsModule } from "@angular/forms";
-import { AlertController, LoadingController, ToastController } from "@ionic/angular/standalone";
 import {
-  IonHeader, IonToolbar, IonTitle, IonContent, IonButtons, IonButton, IonChip,
-  IonLabel, IonIcon, IonCard, IonCardHeader, IonCardTitle, IonCardSubtitle,
-  IonCardContent, IonRefresher, IonRefresherContent, IonSkeletonText,
-  IonBackButton, IonItem, IonTextarea, IonNote, IonText,
+  Component, OnInit, signal, inject,
+} from "@angular/core";
+import { CommonModule }            from "@angular/common";
+import { ActivatedRoute, Router }  from "@angular/router";
+import { FormsModule }             from "@angular/forms";
+import {
+  IonHeader, IonToolbar, IonTitle, IonContent, IonButtons, IonBackButton,
+  IonCard, IonCardHeader, IonCardTitle, IonCardSubtitle, IonCardContent,
+  IonButton, IonIcon, IonText, IonLabel, IonTextarea, IonItem, IonChip,
+  IonSkeletonText, IonSpinner,
+  ToastController, LoadingController,
 } from "@ionic/angular/standalone";
 import { addIcons } from "ionicons";
 import {
-  walletOutline, checkmarkCircleOutline, heartOutline, heart,
-  personCircleOutline, chatbubblesOutline, chatbubbleEllipsesOutline,
-  personOutline, createOutline, sendOutline,
+  heartOutline, heart, chatbubbleOutline, sendOutline, arrowBackOutline,
 } from "ionicons/icons";
-import { Subscription } from "rxjs";
 
-import { Web3Service } from "../../services/web3.service";
+import { WalletService }                         from "../../services/web3.service";
 import { ForumService, PostDisplay, CommentDisplay } from "../../services/forum.service";
+import { CommentThreadComponent }                from "../../components/comment-thread/comment-thread.component";
 
 @Component({
   selector: "app-post-detail",
   templateUrl: "post-detail.page.html",
-  styleUrls: ["post-detail.page.scss"],
+  styleUrls:  ["post-detail.page.scss"],
   standalone: true,
   imports: [
-    CommonModule, ReactiveFormsModule,
-    IonHeader, IonToolbar, IonTitle, IonContent, IonButtons, IonButton, IonChip,
-    IonLabel, IonIcon, IonCard, IonCardHeader, IonCardTitle, IonCardSubtitle,
-    IonCardContent, IonRefresher, IonRefresherContent, IonSkeletonText,
-    IonBackButton, IonItem, IonTextarea, IonNote, IonText,
+    CommonModule, FormsModule,
+    IonHeader, IonToolbar, IonTitle, IonContent, IonButtons, IonBackButton,
+    IonCard, IonCardHeader, IonCardTitle, IonCardSubtitle, IonCardContent,
+    IonButton, IonIcon, IonText, IonLabel, IonTextarea, IonItem, IonChip,
+    IonSkeletonText, IonSpinner,
+    CommentThreadComponent,
   ],
 })
-export class PostDetailPage implements OnInit, OnDestroy {
-  post: PostDisplay | null = null;
-  comments: CommentDisplay[] = [];
-  account: string | null = null;
-  accountShort: string | null = null;
-  isLoadingPost = false;
-  isLoadingComments = false;
-  isSubmittingComment = false;
+export class PostDetailPage implements OnInit {
+  readonly wallet  = inject(WalletService);
+  private  forum   = inject(ForumService);
+  private  route   = inject(ActivatedRoute);
+  private  router  = inject(Router);
+  private  toast   = inject(ToastController);
+  private  loading = inject(LoadingController);
 
-  commentForm: FormGroup;
+  post       = signal<PostDisplay | null>(null);
+  comments   = signal<CommentDisplay[]>([]);
+  isLoading  = signal(false);
+  isSending  = signal(false);
+  newComment = "";
 
-  private postId!: number;
-  private accountSub!: Subscription;
+  postId!: number;
 
-  constructor(
-    private route: ActivatedRoute,
-    private web3: Web3Service,
-    private forum: ForumService,
-    private fb: FormBuilder,
-    private alertCtrl: AlertController,
-    private loadingCtrl: LoadingController,
-    private toastCtrl: ToastController
-  ) {
-    addIcons({
-      walletOutline, checkmarkCircleOutline, heartOutline, heart,
-      personCircleOutline, chatbubblesOutline, chatbubbleEllipsesOutline,
-      personOutline, createOutline, sendOutline,
-    });
-    this.commentForm = this.fb.group({
-      body: ["", [Validators.required, Validators.maxLength(2000)]],
-    });
+  constructor() {
+    addIcons({ heartOutline, heart, chatbubbleOutline, sendOutline, arrowBackOutline });
   }
 
   ngOnInit(): void {
     this.postId = Number(this.route.snapshot.paramMap.get("id"));
-
-    this.accountSub = this.web3.account$.subscribe((acc) => {
-      this.account = acc;
-      this.accountShort = acc ? this.web3.shortenAddress(acc) : null;
-      // Re-fetch to update liked flags when the account changes
-      this.loadData();
-    });
-
-    this.loadData();
+    this.loadPost();
   }
 
-  ngOnDestroy(): void {
-    this.accountSub?.unsubscribe();
-  }
-
-  // ─── Data loading ─────────────────────────────────────────────────────────
-
-  async loadData(event?: any): Promise<void> {
-    await Promise.all([this.loadPost(), this.loadComments()]);
-    if (event) event.target.complete();
-  }
-
-  private async loadPost(): Promise<void> {
-    this.isLoadingPost = true;
+  async loadPost(): Promise<void> {
+    if (this.isLoading()) return;
+    this.isLoading.set(true);
     try {
-      this.post = await this.forum.getPost(this.postId);
+      const [post, comments] = await Promise.all([
+        this.forum.getPost(this.postId),
+        this.forum.getPostComments(this.postId),
+      ]);
+      this.post.set(post);
+      // Build nested tree: attach top-level comments (parentCommentId === 0)
+      this.comments.set(comments.filter((c) => c.parentCommentId === 0));
     } catch (err: any) {
-      await this.showAlert("Error loading post", err?.message ?? String(err));
+      await this._showToast(err?.message ?? "Failed to load post", "danger");
+      this.router.navigate(["/"]);
     } finally {
-      this.isLoadingPost = false;
-    }
-  }
-
-  private async loadComments(): Promise<void> {
-    this.isLoadingComments = true;
-    try {
-      this.comments = await this.forum.getPostComments(this.postId);
-    } catch (err: any) {
-      await this.showAlert("Error loading comments", err?.message ?? String(err));
-    } finally {
-      this.isLoadingComments = false;
+      this.isLoading.set(false);
     }
   }
 
   // ─── Wallet ───────────────────────────────────────────────────────────────
 
   async connectWallet(): Promise<void> {
-    const loading = await this.loadingCtrl.create({ message: "Connecting wallet…" });
-    await loading.present();
+    const loader = await this.loading.create({ message: "Connecting wallet…" });
+    await loader.present();
     try {
-      await this.web3.connect();
-      await this.showToast("Wallet connected!", "success");
+      await this.wallet.connect();
+      this.forum.connectSigner();
+      await this.loadPost();
     } catch (err: any) {
-      await this.showAlert("Connection failed", err?.message ?? String(err));
+      await this._showToast(err?.message ?? "Connection failed", "danger");
     } finally {
-      await loading.dismiss();
+      await loader.dismiss();
     }
   }
 
-  // ─── Like post ────────────────────────────────────────────────────────────
+  // ─── Likes ────────────────────────────────────────────────────────────────
 
-  async likePost(): Promise<void> {
-    if (!this.account) {
-      await this.showAlert("Not connected", "Please connect your wallet to like posts.");
-      return;
-    }
-    if (!this.post || this.post.liked) return;
-
-    const loading = await this.loadingCtrl.create({ message: "Sending like…" });
-    await loading.present();
+  async toggleLikePost(): Promise<void> {
+    const p = this.post();
+    if (!p || p.liked || !this.wallet.address()) return;
     try {
-      await this.forum.likePost(this.postId);
-      this.post.likeCount++;
-      this.post.liked = true;
-      await this.showToast("Post liked!", "success");
+      await this.forum.likePost(p.id);
+      this.post.update((cur) => cur ? { ...cur, liked: true, likeCount: cur.likeCount + 1 } : cur);
     } catch (err: any) {
-      await this.showAlert("Transaction failed", err?.message ?? String(err));
-    } finally {
-      await loading.dismiss();
+      await this._showToast(err?.message ?? "Like failed", "danger");
     }
   }
 
-  // ─── Like comment ─────────────────────────────────────────────────────────
-
-  async likeComment(comment: CommentDisplay): Promise<void> {
-    if (!this.account) {
-      await this.showAlert("Not connected", "Please connect your wallet to like comments.");
-      return;
-    }
-    if (comment.liked) return;
-
-    const loading = await this.loadingCtrl.create({ message: "Sending like…" });
-    await loading.present();
-    try {
-      await this.forum.likeComment(comment.id);
-      comment.likeCount++;
-      comment.liked = true;
-      await this.showToast("Comment liked!", "success");
-    } catch (err: any) {
-      await this.showAlert("Transaction failed", err?.message ?? String(err));
-    } finally {
-      await loading.dismiss();
-    }
-  }
-
-  // ─── Submit comment ───────────────────────────────────────────────────────
+  // ─── Commenting ───────────────────────────────────────────────────────────
 
   async submitComment(): Promise<void> {
-    if (!this.account) {
-      await this.showAlert("Not connected", "Please connect your wallet to comment.");
+    if (!this.newComment.trim() || this.isSending()) return;
+    if (!this.wallet.address()) {
+      await this._showToast("Connect your wallet to comment", "warning");
       return;
     }
-    if (this.commentForm.invalid) return;
-
-    const { body } = this.commentForm.value;
-    const loading = await this.loadingCtrl.create({ message: "Submitting comment to blockchain…" });
-    await loading.present();
-
+    this.isSending.set(true);
+    const loader = await this.loading.create({ message: "Submitting comment…" });
+    await loader.present();
     try {
-      await this.forum.createComment(this.postId, body.trim());
-      this.commentForm.reset();
-      await this.showToast("Comment posted!", "success");
-      // Refresh both post (commentCount) and comments list
-      await this.loadData();
+      await this.forum.createComment(this.postId, 0, this.newComment.trim());
+      this.newComment = "";
+      await this.loadPost(); // refresh
     } catch (err: any) {
-      await this.showAlert("Transaction failed", err?.message ?? String(err));
+      await this._showToast(err?.message ?? "Failed to submit comment", "danger");
     } finally {
-      await loading.dismiss();
+      this.isSending.set(false);
+      await loader.dismiss();
     }
   }
 
-  // ─── Helpers ──────────────────────────────────────────────────────────────
+  // ─── Helpers ─────────────────────────────────────────────────────────────
 
-  private async showToast(message: string, color: string): Promise<void> {
-    const toast = await this.toastCtrl.create({
-      message,
-      color,
-      duration: 2500,
-      position: "bottom",
-    });
-    await toast.present();
-  }
-
-  private async showAlert(header: string, message: string): Promise<void> {
-    const alert = await this.alertCtrl.create({ header, message, buttons: ["OK"] });
-    await alert.present();
+  private async _showToast(message: string, color: string): Promise<void> {
+    const t = await this.toast.create({ message, color, duration: 3000, position: "bottom" });
+    await t.present();
   }
 }

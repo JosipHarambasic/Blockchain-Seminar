@@ -3,8 +3,11 @@ pragma solidity ^0.8.28;
 
 /**
  * @title Forum
- * @notice Decentralised on-chain forum: posts, nested comments, and per-address likes.
- * @dev All data is stored on-chain. Each address may only like a given post or comment once.
+ * @notice Decentralised forum: posts and nested comments with IPFS content hashes.
+ * @dev Content (title + body JSON) is stored on IPFS; only the 32-byte SHA-256
+ *      digest of the CID is stored on-chain as bytes32. This keeps gas costs low
+ *      while ensuring content integrity. Each address may only like a given post
+ *      or comment once.
  */
 contract Forum {
     // ─── Data structures ──────────────────────────────────────────────────────
@@ -12,8 +15,8 @@ contract Forum {
     struct Post {
         uint256 id;
         address author;
-        string  title;
-        string  body;
+        /// @dev Raw SHA-256 digest of the IPFS CIDv1 (dag-json codec).
+        bytes32 contentHash;
         uint256 timestamp;
         uint256 likeCount;
         uint256 commentCount;
@@ -22,8 +25,10 @@ contract Forum {
     struct Comment {
         uint256 id;
         uint256 postId;
+        /// @dev 0 means a top-level comment; >0 is the id of the parent comment.
+        uint256 parentCommentId;
         address author;
-        string  body;
+        bytes32 contentHash;
         uint256 timestamp;
         uint256 likeCount;
     }
@@ -36,13 +41,16 @@ contract Forum {
     mapping(uint256 => Post)      private _posts;
     mapping(uint256 => Comment)   private _comments;
 
-    /// @dev Maps postId => ordered list of commentIds belonging to that post
+    /// @dev Maps postId => ordered list of top-level commentIds for that post.
     mapping(uint256 => uint256[]) private _postCommentIds;
 
-    /// @dev Tracks whether a user has already liked a specific post
+    /// @dev Maps parentCommentId => ordered list of reply commentIds.
+    mapping(uint256 => uint256[]) private _commentReplyIds;
+
+    /// @dev Tracks whether a user has already liked a specific post.
     mapping(address => mapping(uint256 => bool)) private _likedPost;
 
-    /// @dev Tracks whether a user has already liked a specific comment
+    /// @dev Tracks whether a user has already liked a specific comment.
     mapping(address => mapping(uint256 => bool)) private _likedComment;
 
     // ─── Events ───────────────────────────────────────────────────────────────
@@ -50,85 +58,103 @@ contract Forum {
     event PostCreated(
         uint256 indexed postId,
         address indexed author,
-        string  title,
-        uint256 timestamp
+        bytes32         contentHash,
+        uint256         timestamp
     );
 
+    // Only 3 indexed fields allowed per event in Solidity; postId and
+    // parentCommentId are the most useful for subgraph filtering.
     event CommentCreated(
         uint256 indexed commentId,
         uint256 indexed postId,
-        address indexed author,
-        uint256 timestamp
+        uint256         parentCommentId,
+        address         author,
+        bytes32         contentHash,
+        uint256         timestamp
     );
 
     event PostLiked(
         uint256 indexed postId,
         address indexed liker,
-        uint256 newLikeCount
+        uint256         newLikeCount
     );
 
     event CommentLiked(
         uint256 indexed commentId,
         address indexed liker,
-        uint256 newLikeCount
+        uint256         newLikeCount
     );
 
     // ─── Write functions ──────────────────────────────────────────────────────
 
     /**
      * @notice Creates a new forum post.
-     * @param _title Post title (1–200 characters).
-     * @param _body  Post body  (1–5000 characters).
+     * @param _contentHash Raw SHA-256 digest of the IPFS CID for this post's JSON.
      * @return postId The ID of the newly created post.
      */
-    function createPost(string calldata _title, string calldata _body)
+    function createPost(bytes32 _contentHash)
         external
         returns (uint256 postId)
     {
-        require(bytes(_title).length > 0 && bytes(_title).length <= 200,  "Title: 1-200 chars");
-        require(bytes(_body).length  > 0 && bytes(_body).length  <= 5000, "Body: 1-5000 chars");
+        require(_contentHash != bytes32(0), "contentHash required");
 
         postId = ++postCount;
         _posts[postId] = Post({
             id:           postId,
             author:       msg.sender,
-            title:        _title,
-            body:         _body,
+            contentHash:  _contentHash,
             timestamp:    block.timestamp,
             likeCount:    0,
             commentCount: 0
         });
 
-        emit PostCreated(postId, msg.sender, _title, block.timestamp);
+        emit PostCreated(postId, msg.sender, _contentHash, block.timestamp);
     }
 
     /**
-     * @notice Adds a comment to an existing post.
-     * @param _postId The ID of the post to comment on.
-     * @param _body   Comment body (1–2000 characters).
+     * @notice Adds a comment to an existing post (top-level or reply).
+     * @param _postId           The ID of the post to comment on.
+     * @param _parentCommentId  0 for top-level; set to parent comment's ID for a reply.
+     * @param _contentHash      Raw SHA-256 digest of the IPFS CID for this comment's JSON.
      * @return commentId The ID of the newly created comment.
      */
-    function createComment(uint256 _postId, string calldata _body)
+    function createComment(
+        uint256 _postId,
+        uint256 _parentCommentId,
+        bytes32 _contentHash
+    )
         external
         returns (uint256 commentId)
     {
-        require(_postId > 0 && _postId <= postCount,                          "Post not found");
-        require(bytes(_body).length > 0 && bytes(_body).length <= 2000, "Comment: 1-2000 chars");
+        require(_postId > 0 && _postId <= postCount,      "Post not found");
+        require(_contentHash != bytes32(0),                "contentHash required");
+        // If a parent is given it must exist and belong to the same post.
+        if (_parentCommentId != 0) {
+            require(_parentCommentId <= commentCount, "Parent comment not found");
+            require(_comments[_parentCommentId].postId == _postId, "Parent/post mismatch");
+        }
 
         commentId = ++commentCount;
         _comments[commentId] = Comment({
-            id:        commentId,
-            postId:    _postId,
-            author:    msg.sender,
-            body:      _body,
-            timestamp: block.timestamp,
-            likeCount: 0
+            id:              commentId,
+            postId:          _postId,
+            parentCommentId: _parentCommentId,
+            author:          msg.sender,
+            contentHash:     _contentHash,
+            timestamp:       block.timestamp,
+            likeCount:       0
         });
 
-        _postCommentIds[_postId].push(commentId);
+        if (_parentCommentId == 0) {
+            // Top-level comment — attach directly to the post.
+            _postCommentIds[_postId].push(commentId);
+        } else {
+            // Reply — attach to the parent comment.
+            _commentReplyIds[_parentCommentId].push(commentId);
+        }
         _posts[_postId].commentCount++;
 
-        emit CommentCreated(commentId, _postId, msg.sender, block.timestamp);
+        emit CommentCreated(commentId, _postId, _parentCommentId, msg.sender, _contentHash, block.timestamp);
     }
 
     /**
@@ -162,14 +188,28 @@ contract Forum {
     // ─── Read functions ───────────────────────────────────────────────────────
 
     /**
-     * @notice Returns all posts in creation order.
+     * @notice Returns a paginated slice of posts, newest-first.
+     * @param _offset Number of posts to skip (0-based).
+     * @param _limit  Maximum number of posts to return (capped at 100).
      */
-    function getAllPosts() external view returns (Post[] memory) {
-        Post[] memory out = new Post[](postCount);
-        for (uint256 i = 0; i < postCount; i++) {
-            out[i] = _posts[i + 1];
+    function getPosts(uint256 _offset, uint256 _limit)
+        external
+        view
+        returns (Post[] memory posts, uint256 total)
+    {
+        total = postCount;
+        if (_offset >= total) {
+            return (new Post[](0), total);
         }
-        return out;
+        // Iterate from newest (postCount) down; _offset skips that many.
+        uint256 available = total - _offset;
+        uint256 count = available < _limit ? available : _limit;
+        if (count > 100) count = 100; // hard cap to prevent excessive gas
+        posts = new Post[](count);
+        for (uint256 i = 0; i < count; i++) {
+            // newest-first: postCount - _offset - i
+            posts[i] = _posts[total - _offset - i];
+        }
     }
 
     /**
@@ -181,11 +221,24 @@ contract Forum {
     }
 
     /**
-     * @notice Returns all comments belonging to a post, in creation order.
+     * @notice Returns all top-level comments belonging to a post, in creation order.
      */
     function getPostComments(uint256 _postId) external view returns (Comment[] memory) {
         require(_postId > 0 && _postId <= postCount, "Post not found");
         uint256[] storage ids = _postCommentIds[_postId];
+        Comment[] memory out = new Comment[](ids.length);
+        for (uint256 i = 0; i < ids.length; i++) {
+            out[i] = _comments[ids[i]];
+        }
+        return out;
+    }
+
+    /**
+     * @notice Returns all direct replies to a given comment, in creation order.
+     */
+    function getCommentReplies(uint256 _commentId) external view returns (Comment[] memory) {
+        require(_commentId > 0 && _commentId <= commentCount, "Comment not found");
+        uint256[] storage ids = _commentReplyIds[_commentId];
         Comment[] memory out = new Comment[](ids.length);
         for (uint256 i = 0; i < ids.length; i++) {
             out[i] = _comments[ids[i]];

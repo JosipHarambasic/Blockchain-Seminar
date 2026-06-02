@@ -18,4 +18,11 @@ export const routes: Routes = [
         (m) => m.PostDetailPage
       ),
   },
+  {
+    path: "create",
+    loadComponent: () =>
+      import("./pages/create-post/create-post.page").then(
+        (m) => m.CreatePostPage
+      ),
+  },
 ];

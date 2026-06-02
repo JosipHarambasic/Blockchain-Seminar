@@ -1,36 +1,31 @@
-.post-card {
-  transition: box-shadow 0.2s ease;
-
-  &:hover {
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
-  }
+ion-card {
+  margin: 12px;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0,0,0,.08);
+  cursor: pointer;
 }
 
-.post-preview {
-  color: var(--ion-color-dark);
-  line-height: 1.5;
+.post-body-preview {
+  color: var(--ion-color-medium);
+  font-size: 0.9rem;
   margin-bottom: 8px;
 }
 
-.post-stats {
+.post-actions {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  border-top: 1px solid var(--ion-color-light-shade);
-  padding-top: 6px;
-  margin-top: 4px;
+  gap: 4px;
 }
+
+.spacer { flex: 1; }
 
 .empty-state {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  min-height: 60vh;
-  gap: 12px;
-
-  p {
-    color: var(--ion-color-medium);
-    font-size: 1rem;
-  }
+  padding: 60px 24px;
+  color: var(--ion-color-medium);
+  ion-icon { font-size: 64px; margin-bottom: 16px; }
+  p { font-size: 1rem; }
 }

@@ -1,0 +1,84 @@
+<div class="comment-wrapper" [style.margin-left.px]="depth * 16">
+  <ion-card class="comment-card">
+    <ion-card-content>
+      <!-- Author + date -->
+      <div class="comment-meta">
+        <span class="author">{{ comment.authorDisplay }}</span>
+        <span class="date">{{ comment.timestampFormatted }}</span>
+      </div>
+
+      <!-- Body -->
+      <p class="comment-body" style="white-space:pre-wrap">{{ comment.body }}</p>
+
+      <!-- Actions row -->
+      <div class="comment-actions">
+        <!-- Like -->
+        <ion-button fill="clear" size="small" (click)="toggleLike()">
+          <ion-icon [name]="comment.liked ? 'heart' : 'heart-outline'"
+                    [color]="comment.liked ? 'danger' : 'medium'"
+                    slot="start"></ion-icon>
+          <ion-text color="medium">{{ comment.likeCount }}</ion-text>
+        </ion-button>
+
+        <!-- Toggle replies -->
+        @if (replyCount > 0 || replies().length > 0) {
+          <ion-button fill="clear" size="small" (click)="toggleReplies()">
+            <ion-icon [name]="showReplies() ? 'chevron-up-outline' : 'chevron-down-outline'"
+                      color="medium" slot="start"></ion-icon>
+            <ion-text color="medium">
+              {{ replies().length > 0 ? replies().length : replyCount }}
+              {{ replies().length === 1 ? 'reply' : 'replies' }}
+            </ion-text>
+          </ion-button>
+        }
+
+        <!-- Reply button (max depth 4) -->
+        @if (depth < 4) {
+          <ion-button fill="clear" size="small" (click)="toggleReplyBox()">
+            <ion-icon name="chatbubble-outline" color="medium" slot="start"></ion-icon>
+            <ion-text color="medium">Reply</ion-text>
+          </ion-button>
+        }
+
+        @if (isLoadingReplies()) {
+          <ion-spinner name="crescent" color="medium" style="height:16px;width:16px;margin-left:8px"></ion-spinner>
+        }
+      </div>
+
+      <!-- Reply input -->
+      @if (showReplyBox()) {
+        <ion-item lines="none" class="reply-input-item">
+          <ion-textarea
+            [(ngModel)]="replyText"
+            placeholder="Write a reply…"
+            rows="2"
+            autoGrow="true">
+          </ion-textarea>
+        </ion-item>
+        <ion-button
+          expand="block"
+          size="small"
+          [disabled]="!replyText.trim() || isSending()"
+          (click)="submitReply()">
+          @if (isSending()) {
+            <ion-spinner name="crescent" slot="start"></ion-spinner>
+          } @else {
+            <ion-icon name="send-outline" slot="start"></ion-icon>
+          }
+          Post Reply
+        </ion-button>
+      }
+    </ion-card-content>
+  </ion-card>
+
+  <!-- Recursive nested replies -->
+  @if (showReplies()) {
+    @for (reply of replies(); track reply.id) {
+      <app-comment-thread
+        [comment]="reply"
+        [postId]="postId"
+        [depth]="depth + 1">
+      </app-comment-thread>
+    }
+  }
+</div>
