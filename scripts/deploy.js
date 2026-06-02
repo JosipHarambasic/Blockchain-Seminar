@@ -1,4 +1,5 @@
-const { ethers, hre } = require("hardhat");
+const hre = require("hardhat");
+const { ethers } = hre;
 const fs = require("fs");
 const path = require("path");
 
@@ -50,4 +51,3 @@ main()
     console.error(err);
     process.exit(1);
   });
-
