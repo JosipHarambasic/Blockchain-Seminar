@@ -4,7 +4,7 @@ schema:
 dataSources:
   - kind: ethereum
     name: Forum
-    network: uzheth_pos
+    network: uzhethereum
     source:
       address: "0x04bce4BE8cdA1a21F99758f7723bd2dF6d7A702F"
       abi: Forum

@@ -12,11 +12,11 @@
  * when reading.  This saves calldata gas and is perfectly reversible.
  */
 import { Injectable } from "@angular/core";
+import { environment } from "../../environments/environment";
 
 // All Helia imports are dynamic to avoid bundler issues with pure-ESM packages.
 // Types are imported statically for TypeScript — they are erased at compile time.
 import type { Helia }       from "helia";
-import type { JSON as HeliaJson } from "@helia/json";
 import type { CID }         from "multiformats/cid";
 
 export interface IpfsContent {
@@ -27,14 +27,13 @@ export interface IpfsContent {
 @Injectable({ providedIn: "root" })
 export class IpfsService {
   private _helia:    Helia      | null = null;
-  private _json:     HeliaJson  | null = null;
   private _initPromise: Promise<void> | null = null;
 
   // ─── Initialisation ─────────────────────────────────────────────────────────
 
   /**
-   * Lazily starts a Helia node backed by IndexedDB.  Called automatically by
-   * upload/fetch — callers do not need to await this directly.
+   * Lazily initialises a Helia node backed by IndexedDB.  Called automatically
+   * by upload/fetch — callers do not need to await this directly.
    */
   private async _init(): Promise<void> {
     if (this._helia) return;
@@ -44,12 +43,10 @@ export class IpfsService {
       // Dynamic imports keep Helia's pure-ESM graph out of the initial bundle.
       const [
         { createHelia },
-        { json },
         { IDBBlockstore },
         { IDBDatastore },
       ] = await Promise.all([
         import("helia"),
-        import("@helia/json"),
         import("blockstore-idb"),
         import("datastore-idb"),
       ]);
@@ -60,8 +57,14 @@ export class IpfsService {
       await blockstore.open();
       await datastore.open();
 
-      this._helia = await createHelia({ blockstore, datastore });
-      this._json  = json(this._helia);
+      // DAG-JSON upload/read only needs the local blockstore. Starting libp2p in
+      // the browser makes Helia dial WebTransport/QUIC peers, which can crash Brave.
+      this._helia = await createHelia({
+        blockstore,
+        datastore,
+        blockBrokers: [],
+        start: false,
+      });
     })();
 
     return this._initPromise;
@@ -75,7 +78,18 @@ export class IpfsService {
    */
   async upload(content: IpfsContent): Promise<{ cid: string; bytes32: string }> {
     await this._init();
-    const cid     = await this._json!.add(content);
+
+    const [{ CID }, { sha256 }, dagJson] = await Promise.all([
+      import("multiformats/cid"),
+      import("multiformats/hashes/sha2"),
+      import("@ipld/dag-json"),
+    ]);
+
+    const block   = dagJson.encode(content);
+    const hash    = await sha256.digest(block);
+    const cid     = CID.createV1(dagJson.code, hash);
+
+    await this._helia!.blockstore.put(cid, block);
     const bytes32 = this.cidToBytes32(cid);
     return { cid: cid.toString(), bytes32 };
   }
@@ -86,9 +100,24 @@ export class IpfsService {
    */
   async fetch(cidString: string): Promise<IpfsContent> {
     await this._init();
-    const { CID } = await import("multiformats/cid");
+    const [{ CID }, dagJson] = await Promise.all([
+      import("multiformats/cid"),
+      import("@ipld/dag-json"),
+    ]);
+
     const cid = CID.parse(cidString);
-    return this._json!.get(cid) as Promise<IpfsContent>;
+    try {
+      const block = await this._helia!.blockstore.get(cid, { offline: true });
+      return dagJson.decode(block) as IpfsContent;
+    } catch (err) {
+      const gateway = environment.ipfsGateway.replace(/\/?$/, "/");
+      const response = await fetch(`${gateway}${cidString}`);
+      if (!response.ok) throw err;
+
+      const block = new Uint8Array(await response.arrayBuffer());
+      await this._helia!.blockstore.put(cid, block);
+      return dagJson.decode(block) as IpfsContent;
+    }
   }
 
   /**
