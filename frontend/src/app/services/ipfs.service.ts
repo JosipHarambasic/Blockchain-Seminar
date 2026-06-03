@@ -24,6 +24,11 @@ export interface IpfsContent {
   body:  string;
 }
 
+interface PinningResponse {
+  cid:     string;
+  bytes32: string;
+}
+
 @Injectable({ providedIn: "root" })
 export class IpfsService {
   private _helia:    Helia      | null = null;
@@ -91,7 +96,40 @@ export class IpfsService {
 
     await this._helia!.blockstore.put(cid, block);
     const bytes32 = this.cidToBytes32(cid);
+    await this._pinPublicly(content, cid.toString(), bytes32);
     return { cid: cid.toString(), bytes32 };
+  }
+
+  /**
+   * Pins the same DAG-JSON content through the backend before any transaction
+   * stores its digest on-chain.
+   */
+  private async _pinPublicly(content: IpfsContent, cid: string, bytes32: string): Promise<void> {
+    const endpoint = environment.ipfsPinningEndpoint;
+    if (!endpoint) throw new Error("IPFS pinning endpoint is not configured");
+
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...content, cid, bytes32 }),
+    });
+
+    let payload: Partial<PinningResponse> & { error?: string } = {};
+    try {
+      payload = await response.json();
+    } catch { /* backend may return non-JSON errors */ }
+
+    if (!response.ok) {
+      throw new Error(payload.error || `IPFS pinning failed with HTTP ${response.status}`);
+    }
+
+    if (payload.cid !== cid) {
+      throw new Error(`IPFS pinning CID mismatch: backend returned ${payload.cid}, expected ${cid}`);
+    }
+
+    if (payload.bytes32?.toLowerCase() !== bytes32.toLowerCase()) {
+      throw new Error(`IPFS pinning digest mismatch: backend returned ${payload.bytes32}, expected ${bytes32}`);
+    }
   }
 
   /**

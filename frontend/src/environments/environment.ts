@@ -21,4 +21,7 @@ export const environment = {
 
   // IPFS gateway used for fallback reads (if the local Helia node doesn't have the block).
   ipfsGateway: "https://dweb.link/ipfs/",
+
+  // Backend endpoint that pins post/comment DAG-JSON content to public IPFS.
+  ipfsPinningEndpoint: "http://127.0.0.1:3000/api/ipfs/pin",
 };

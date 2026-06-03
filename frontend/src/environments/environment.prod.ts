@@ -12,4 +12,6 @@ export const environment = {
   subgraphUrl: "https://api.thegraph.com/subgraphs/name/YOUR_GITHUB_USER/forum-subgraph",
 
   ipfsGateway: "https://dweb.link/ipfs/",
+
+  ipfsPinningEndpoint: "/api/ipfs/pin",
 };
