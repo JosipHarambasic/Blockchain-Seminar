@@ -1,8 +1,14 @@
-const { ethers, hre } = require("hardhat");
-const fs = require("fs");
-const path = require("path");
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { artifacts, network } from "hardhat";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 async function main() {
+  const connection = await network.create();
+  const { ethers } = connection;
+
   const [deployer] = await ethers.getSigners();
   console.log("Deploying Forum contract with account:", deployer.address);
 
@@ -18,7 +24,7 @@ async function main() {
   console.log("Forum deployed to:", address);
 
   // ── Write ABI for subgraph ────────────────────────────────────────────────
-  const artifact = await hre.artifacts.readArtifact("Forum");
+  const artifact = await artifacts.readArtifact("Forum");
   const abiOut = path.join(__dirname, "../subgraph/abis/Forum.json");
   fs.mkdirSync(path.dirname(abiOut), { recursive: true });
   fs.writeFileSync(abiOut, JSON.stringify(artifact.abi, null, 2));
@@ -27,7 +33,7 @@ async function main() {
   // ── Write deployment info for the frontend ────────────────────────────────
   const deploymentInfo = {
     contractAddress: address,
-    network: hre.network.name,
+    network: connection.networkName,
     deployedAt: new Date().toISOString(),
     deployer: deployer.address,
     chainId: (await ethers.provider.getNetwork()).chainId.toString(),
@@ -44,10 +50,9 @@ async function main() {
   console.log("  3. Run: cd subgraph && graph deploy ...");
 }
 
-main()
-  .then(() => process.exit(0))
-  .catch((err) => {
-    console.error(err);
-    process.exit(1);
-  });
-
+try {
+  await main();
+} catch (err) {
+  console.error(err);
+  process.exitCode = 1;
+}

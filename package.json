@@ -1,6 +1,7 @@
 {
   "name": "decentralized-forum",
   "version": "1.0.0",
+  "type": "module",
   "description": "Decentralized Forum DApp — UZH Blockchain Programming FS26 (Task 12)",
   "scripts": {
     "compile": "hardhat compile",
@@ -12,7 +13,7 @@
     "clean": "hardhat clean"
   },
   "devDependencies": {
-    "@nomicfoundation/hardhat-toolbox": "^7.0.0",
+    "@nomicfoundation/hardhat-toolbox-mocha-ethers": "^3.0.6",
     "hardhat": "^3.0.0"
   },
   "dependencies": {
