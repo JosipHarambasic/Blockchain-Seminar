@@ -12,7 +12,7 @@ export const environment = {
   rpcUrl: "http://130.60.144.77:8554",
 
   // Deployed Forum contract address — update after running deploy.js
-  contractAddress: "0x0000000000000000000000000000000000000000",
+  contractAddress: "0x04bce4BE8cdA1a21F99758f7723bd2dF6d7A702F",
 
   // The Graph subgraph endpoint for the Forum contract.
   // Replace with your deployed subgraph URL from https://thegraph.com/hosted-service/
