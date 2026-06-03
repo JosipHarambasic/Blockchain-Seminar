@@ -2,9 +2,9 @@
 export const environment = {
   production: true,
 
-  networkChainId: 702,
+  networkChainId: 70207,
   networkName: "UZHETH PoS",
-  rpcUrl: "https://rpc.uzheths.ifi.uzh.ch",
+  rpcUrl: "http://130.60.144.77:8554",
 
   // Update with the deployed contract address before building for production
   contractAddress: "0x0000000000000000000000000000000000000000",

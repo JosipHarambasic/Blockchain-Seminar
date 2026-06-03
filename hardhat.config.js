@@ -26,8 +26,8 @@ export default defineConfig({
     uzheth_pos: {
       type: "http",
       chainType: "l1",
-      url: process.env.UZHETH_POS_RPC_URL || "https://rpc.uzheths.ifi.uzh.ch",
-      chainId: Number.parseInt(process.env.UZHETH_POS_CHAIN_ID || "702", 10),
+      url: process.env.UZHETH_POS_RPC_URL || "http://130.60.144.77:8554",
+      chainId: Number.parseInt(process.env.UZHETH_POS_CHAIN_ID || "70207", 10),
       accounts: uzhethAccounts,
     },
   },

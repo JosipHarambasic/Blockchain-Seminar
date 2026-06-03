@@ -2,7 +2,7 @@
 
 A production-grade decentralised forum built on:
 
-- **Smart Contract** – Solidity 0.8.28, deployed on UZHETH PoS (chainId 702)
+- **Smart Contract** – Solidity 0.8.28, deployed on UZHETH PoS (chainId 70207)
 - **IPFS** – Content stored via Helia (in-browser node, IndexedDB persistence)
 - **The Graph** – Off-chain indexing for paginated feeds
 - **Frontend** – Angular 20 + Ionic 8, ethers.js v6, standalone components, signals
@@ -20,7 +20,7 @@ User ──► Angular frontend (Ionic)
           └─ SubgraphService──► The Graph GraphQL endpoint
                                      │
 Forum.sol ◄──────────────────────────┘
-  (UZHETH PoS, chainId 702)
+  (UZHETH PoS, chainId 70207)
   stores: bytes32 contentHash (SHA-256 of JSON via IPFS CIDv1)
 
 Helia (in-browser, IndexedDB)
@@ -53,7 +53,8 @@ npm install          # root — installs Hardhat etc.
 Copy `.env.example` to `.env` (create it if absent):
 
 ```
-UZHETH_RPC=https://rpc.uzheths.ifi.uzh.ch
+UZHETH_POS_RPC_URL=http://130.60.144.77:8554
+UZHETH_POS_CHAIN_ID=70207
 DEPLOYER_PRIVATE_KEY=0xYOUR_PRIVATE_KEY
 ```
 
@@ -80,7 +81,8 @@ Update `frontend/src/environments/environment.ts`:
 ```typescript
 export const environment = {
   production: false,
-  rpcUrl: "https://rpc.uzheths.ifi.uzh.ch",
+  networkChainId: 70207,
+  rpcUrl: "http://130.60.144.77:8554",
   contractAddress: "0xYOUR_DEPLOYED_ADDRESS",     // ← paste here
   subgraphUrl: "https://api.thegraph.com/subgraphs/name/YOUR_GITHUB/forum-subgraph",
   ipfsGateway: "https://dweb.link/ipfs/",
@@ -139,7 +141,7 @@ npx ionic serve
 ```
 
 Runs at `http://localhost:4200`.  
-MetaMask will be prompted to switch to UZHETH PoS (chainId 702, RPC https://rpc.uzheths.ifi.uzh.ch).
+MetaMask will be prompted to switch to UZHETH PoS (chainId 70207, RPC http://130.60.144.77:8554).
 
 ### Production build
 

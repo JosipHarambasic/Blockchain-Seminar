@@ -7,9 +7,9 @@ export const environment = {
   production: false,
 
   // UZHETH PoS network configuration
-  networkChainId: 702,
+  networkChainId: 70207,
   networkName: "UZHETH PoS",
-  rpcUrl: "https://rpc.uzheths.ifi.uzh.ch",
+  rpcUrl: "http://130.60.144.77:8554",
 
   // Deployed Forum contract address — update after running deploy.js
   contractAddress: "0x0000000000000000000000000000000000000000",
