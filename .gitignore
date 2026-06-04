@@ -5,6 +5,10 @@ artifacts/
 coverage/
 coverage.json
 typechain-types/
+/types/
 frontend/node_modules/
 frontend/www/
 frontend/.angular/
+frontend/src/environments/deployment.json
+subgraph/build/
+subgraph/generated/

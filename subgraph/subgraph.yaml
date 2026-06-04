@@ -4,12 +4,11 @@ schema:
 dataSources:
   - kind: ethereum
     name: Forum
-    network: mainnet          # change to "localhost" for local Hardhat, or your target network name
+    network: uzhethereum
     source:
-      # Replace with the deployed contract address after running deploy.js
-      address: "0x0000000000000000000000000000000000000000"
+      address: "0x04bce4BE8cdA1a21F99758f7723bd2dF6d7A702F"
       abi: Forum
-      startBlock: 0           # set to the deployment block to avoid scanning from genesis
+      startBlock: 602593
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
