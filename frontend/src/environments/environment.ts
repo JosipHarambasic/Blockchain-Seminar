@@ -12,12 +12,7 @@ export const environment = {
   rpcUrl: "http://130.60.144.77:8554",
 
   // Deployed Forum contract address — update after running deploy.js
-  contractAddress: "0x04bce4BE8cdA1a21F99758f7723bd2dF6d7A702F",
-
-  // The Graph subgraph endpoint for the Forum contract.
-  // Replace with your deployed subgraph URL from https://thegraph.com/hosted-service/
-  // or a local Graph Node: http://localhost:8000/subgraphs/name/forum-subgraph
-  subgraphUrl: "https://api.thegraph.com/subgraphs/name/YOUR_GITHUB_USER/forum-subgraph",
+  contractAddress: "0x0179B6b6C98C571561Cfd998bF0124D13d9eB3A9",
 
   // IPFS gateway used for fallback reads (if the local Helia node doesn't have the block).
   ipfsGateway: "https://dweb.link/ipfs/",

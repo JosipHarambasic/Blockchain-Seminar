@@ -6,9 +6,9 @@ dataSources:
     name: Forum
     network: uzhethereum
     source:
-      address: "0x04bce4BE8cdA1a21F99758f7723bd2dF6d7A702F"
+      address: "0x0179B6b6C98C571561Cfd998bF0124D13d9eB3A9"
       abi: Forum
-      startBlock: 602593
+      startBlock: 614050
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
