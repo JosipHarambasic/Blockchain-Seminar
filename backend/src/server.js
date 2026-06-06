@@ -10,7 +10,7 @@ const PORT = Number(process.env.PORT || 3000);
 const KUBO_API_URL = normalizeBaseUrl(process.env.KUBO_API_URL || "http://127.0.0.1:5001");
 const REQUEST_SIZE_LIMIT = process.env.REQUEST_SIZE_LIMIT || "64kb";
 const MAX_TITLE_LENGTH = Number(process.env.MAX_TITLE_LENGTH || 200);
-const MAX_BODY_LENGTH = Number(process.env.MAX_BODY_LENGTH || 20000);
+const MAX_BODY_LENGTH = Number(process.env.MAX_BODY_LENGTH || 50000);
 
 const app = express();
 
