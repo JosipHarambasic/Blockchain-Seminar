@@ -107,7 +107,6 @@ npx hardhat run scripts/deploy.js --network uzheth_pos
 ```
 
 The script prints the deployed address and writes:
-- `subgraph/abis/Forum.json`
 - `frontend/src/environments/deployment.json`
 
 #### Update environment.ts
@@ -138,7 +137,7 @@ MetaMask will prompt you to add/switch to UZHETH PoS (chainId 70207, RPC `http:/
 ```
 [ ] ipfs daemon                          running on :5001
 [ ] cd backend && npm start              running on :3000
-[ ] npx hardhat run scripts/deploy.js    contract deployed, address copied to environment.ts
+[ ] npx hardhat run scripts/deploy.js --network uzheth_pos   contract deployed, address copied to environment.ts
 [ ] cd frontend && npm start             app on :4200
 ```
 
@@ -158,7 +157,7 @@ MetaMask will prompt you to add/switch to UZHETH PoS (chainId 70207, RPC `http:/
 
 - `ForumService.getPosts(offset, limit)` reads directly from the RPC node.
 - `IpfsService.fetchByBytes32(hex)` reconstructs the CID and fetches content from the local Helia cache or the configured IPFS gateway.
-- ENS names are resolved on Ethereum mainnet (falls back to a shortened address on UZHETH).
+- ENS names are attempted via the connected provider (always falls back to a shortened address on UZHETH PoS, which has no ENS registry).
 
 ### Comments & nested replies
 
