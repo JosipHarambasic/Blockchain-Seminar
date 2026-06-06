@@ -1,0 +1,427 @@
+% import format file
+\documentclass[11pt]{article}
+\usepackage{uzhreport}
+
+% Author information
+\newcommand{\reportAuthor}{Josip Harambasic, Niklas Schmattloch, Micha Hess
+}
+
+\newcommand{\reportTitle}{Decentralised Forum on UZHETH PoS}
+\newcommand{\reportSubTitle}{Blockchain Programming '26}
+\newcommand{\reportFaculty}{Faculty of Business, Economics and Informatics}
+\newcommand{\reportUniversity}{University of Zurich}
+\newcommand{\reportPlaceDate}{Zurich, June 05, 2026}
+
+\begin{document}
+
+% title
+\begin{titlepage}
+\thispagestyle{empty}
+
+\begin{figure}[H]
+\vspace{-4cm}
+\centering
+\begin{minipage}[t]{.25\linewidth}
+  \raggedright
+  \hspace*{-6.5cm}\includegraphics[width=1.5\linewidth]{logo/uzh_logo_e_pos.pdf}
+\end{minipage}%
+\begin{minipage}[t]{.35\linewidth}
+  \vspace{-2.7cm}
+  \raggedleft
+\end{minipage}
+\end{figure}
+
+\vspace{1cm}
+\par
+\noindent
+\Huge
+\textbf{\reportTitle}
+\vspace{0.5cm}
+\LARGE
+\par
+\noindent
+\textit{\reportSubTitle}
+\\
+{\color{uzh@blue}\rule[0.cm]{\linewidth}{2pt} }
+\Large
+
+\vspace{0.2cm}
+\noindent
+{\LARGE \reportAuthor }\\ \\
+
+\noindent
+\begin{center}
+    \colorbox{uzh@apple}{\begin{minipage}{\textwidth}
+    \centering
+    {\LARGE \sc  \color{white}{This is the final report for the Blockchain \\ Programming Seminar'26}  }
+    \end{minipage}}
+    \vspace{0.2cm}
+\end{center}
+
+\vspace{2cm}
+\small
+\par \noindent
+\par \noindent
+\reportFaculty
+\par \noindent
+\reportUniversity
+\par \noindent
+\reportPlaceDate
+
+\end{titlepage}
+
+% Content
+\tableofcontents
+\newpage
+
+% Abstract
+\begin{abstract}
+This report presents the design, implementation, and evaluation of a decentralised forum application built on the UZHETH Proof-of-Stake blockchain (chainId~70207). The system enables users to create posts and nested comments, and to like content, without relying on any centralised server for either data storage or access control. Post and comment content is stored on the InterPlanetary File System (IPFS) as DAG-JSON blocks; only the 32-byte SHA-256 content digest is written on-chain, keeping gas costs minimal while guaranteeing content integrity. The Ethereum smart contract is written in Solidity~0.8.28, the frontend in Angular~20 with Ionic~8, and MetaMask is used for wallet integration via ethers.js~v6. The report describes the architecture, smart-contract design, IPFS integration, frontend implementation, and testing methodology, and concludes with a discussion of current limitations and possible future work.
+\end{abstract}
+
+\newpage
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Introduction}
+% ─────────────────────────────────────────────────────────────────────────────
+
+Online forums are a foundational form of internet communication, yet virtually every mainstream forum relies on a centralised operator to store content, enforce access rules, and decide what can or cannot be said. Centralised control introduces several well-known risks: censorship, single points of failure, data loss, and rent-seeking by the platform owner.
+
+Blockchain technology offers an alternative: rules encoded as smart contracts execute autonomously and transparently, and no single party can unilaterally alter them~\cite{buterin2014ethereum}. However, blockchains are poorly suited to storing large amounts of arbitrary text, because every byte of on-chain storage costs gas. A common pattern is therefore to store content off-chain and only commit a cryptographic fingerprint on-chain~\cite{benet2014ipfs}.
+
+The InterPlanetary File System (IPFS) is a peer-to-peer content-addressed storage network. Each piece of content is identified by its content identifier (CID), which encodes the cryptographic hash of the content. This means that the CID is simultaneously a pointer and an integrity proof: if the content changes, so does its CID~\cite{benet2014ipfs}.
+
+This project combines these two technologies to build a decentralised forum:
+\begin{itemize}
+  \item \textbf{Ethereum smart contract} – stores post/comment metadata and enforces social rules (one like per address, parent-comment validation) on the UZHETH PoS network.
+  \item \textbf{IPFS} – stores the human-readable content (title and body) as DAG-JSON blocks addressed by CIDv1.
+  \item \textbf{Express backend} – acts as a pinning proxy, ensuring content is durably stored before the on-chain transaction is submitted.
+  \item \textbf{Angular/Ionic frontend} – provides a mobile-friendly single-page application that interacts with MetaMask and the contract via ethers.js~v6.
+\end{itemize}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Implementation}
+\label{sec:implementation}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\begin{keypointbox}
+\textbf{GitLab Repository: \url{https://github.com/your-repo/Blockchain-Seminar}}
+\end{keypointbox}
+
+\subsection{System Architecture}
+
+Figure~\ref{fig:architecture} illustrates the high-level architecture. The user's browser runs the Angular frontend, which communicates with three external systems: MetaMask (for signing transactions), a local Kubo/IPFS node via the backend API (for content storage), and the UZHETH PoS RPC node (for reading and writing chain state).
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=1\linewidth]{Architecture.png}
+  \caption{System architecture. The frontend never stores content on-chain directly; it first pins the DAG-JSON block to IPFS via the backend, then commits only the 32-byte digest.}
+  \label{fig:architecture}
+\end{figure}
+
+The content flow for creating a post is as follows:
+\begin{enumerate}
+  \item The user types a title and body in the browser.
+  \item The frontend encodes \texttt{\{title, body\}} as a DAG-JSON block and computes its CIDv1 (codec \texttt{0x0129}, hash \texttt{sha2-256}).
+  \item The block is cached in the browser's Helia IndexedDB blockstore.
+  \item The frontend calls \texttt{POST /api/ipfs/pin} on the backend; the backend independently re-encodes the block, verifies the CID matches, and pins it via the Kubo HTTP API.
+  \item After a successful pin response, the frontend extracts the raw 32-byte SHA-256 digest from the CID's multihash and calls \texttt{Forum.createPost(bytes32)} on the smart contract.
+  \item The contract stores the digest and emits a \texttt{PostCreated} event.
+\end{enumerate}
+
+\subsection{Setting Up the Environment}
+
+\subsubsection{Prerequisites}
+
+\begin{itemize}
+  \item Node.js $\geq$ 20 and npm $\geq$ 10
+  \item MetaMask browser extension
+  \item Kubo/IPFS daemon (\texttt{brew install ipfs} on macOS)
+\end{itemize}
+
+\subsubsection{Install Dependencies}
+
+\begin{lstlisting}[style=command]
+# Root (Hardhat, ethers.js, contract tooling)
+npm install
+
+# Backend
+cd backend && npm install
+
+# Frontend
+cd frontend && npm install
+\end{lstlisting}
+
+\subsubsection{Configure Environment}
+
+\begin{lstlisting}[style=command]
+cp .env.example .env
+# Edit .env and set DEPLOYER_PRIVATE_KEY=0xYOUR_KEY
+\end{lstlisting}
+
+\subsection{Smart Contract}
+
+The \texttt{Forum} contract (Solidity 0.8.28) is the authoritative source of truth for all social data. It defines two core structs:
+
+\begin{lstlisting}[style=command]
+struct Post {
+    uint256 id;
+    address author;
+    bytes32 contentHash;   // SHA-256 of the IPFS CIDv1 digest
+    uint256 timestamp;
+    uint256 likeCount;
+    uint256 commentCount;
+}
+
+struct Comment {
+    uint256 id;
+    uint256 postId;
+    uint256 parentCommentId; // 0 = top-level; >0 = reply
+    address author;
+    bytes32 contentHash;
+    uint256 timestamp;
+    uint256 likeCount;
+}
+\end{lstlisting}
+
+\paragraph{Write functions.}
+\begin{itemize}
+  \item \texttt{createPost(bytes32)} – stores a new post and emits \texttt{PostCreated}.
+  \item \texttt{createComment(uint256 postId, uint256 parentCommentId, bytes32)} – stores a comment or reply. If \texttt{parentCommentId} is non-zero it is validated to belong to the same post.
+  \item \texttt{likePost(uint256)} / \texttt{likeComment(uint256)} – increment the like counter. Revert if the caller has already liked the item (\texttt{mapping(address => mapping(uint256 => bool))}).
+\end{itemize}
+
+\paragraph{Read functions.}
+\begin{itemize}
+  \item \texttt{getPosts(uint256 offset, uint256 limit)} – returns a paginated slice of posts, newest-first, together with the total count. The limit is capped at 100 to prevent gas abuse.
+  \item \texttt{getPost(uint256)} – single post by ID.
+  \item \texttt{getPostComments(uint256)} – all top-level comments for a post.
+  \item \texttt{getCommentReplies(uint256)} – all replies to a given comment.
+  \item \texttt{hasLikedPost} / \texttt{hasLikedComment} – view helpers for the frontend.
+\end{itemize}
+
+\paragraph{Gas considerations.}
+Storing a 32-byte value in a struct costs one \texttt{SSTORE} operation ($\approx$20\,000 gas on first write). In contrast, storing a 100-byte post body directly would require multiple storage slots and significantly more gas. The IPFS approach keeps on-chain costs proportional to the number of posts, not to the length of their content.
+
+\subsubsection{Deploy to UZHETH PoS}
+
+\begin{lstlisting}[style=command]
+npx hardhat compile
+npx hardhat test
+npx hardhat run scripts/deploy.js --network uzheth_pos
+\end{lstlisting}
+
+The deploy script writes the deployment address and metadata to \texttt{frontend/src/environments/deployment.json}. After deploying, \texttt{contractAddress} in \texttt{environment.ts} must be updated with the printed address.
+
+\subsection{IPFS Content Addressing}
+
+Content is encoded as DAG-JSON, a deterministic JSON serialisation defined by the IPLD specification~\cite{ipld2023}. Using DAG-JSON ensures that the same \texttt{\{title, body\}} object always produces the same byte sequence and therefore the same CID, regardless of which client performs the encoding.
+
+\paragraph{CID to bytes32 conversion.}
+A CIDv1 with codec \texttt{dag-json} (\texttt{0x0129}) and hash function \texttt{sha2-256} encodes the 32-byte hash digest inside a multihash structure. The conversion to \texttt{bytes32} simply extracts the last 32 bytes of the multihash:
+
+\begin{lstlisting}[style=command]
+function cidToBytes32(cid) {
+  const digest = cid.multihash.digest; // Uint8Array[32]
+  return "0x" + Array.from(digest)
+    .map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+\end{lstlisting}
+
+The inverse operation reconstructs the CID from the stored \texttt{bytes32}:
+
+\begin{lstlisting}[style=command]
+async function bytes32ToCidString(bytes32) {
+  const [{ CID }, { sha256 }, { create: createMultihash }] = await Promise.all([
+    import("multiformats/cid"),
+    import("multiformats/hashes/sha2"),
+    import("multiformats/hashes/digest"),
+  ]);
+  const hex = bytes32.startsWith("0x") ? bytes32.slice(2) : bytes32;
+  const raw = Uint8Array.from(hex.match(/.{2}/g).map((b) => parseInt(b, 16)));
+  const mh  = createMultihash(sha256.code, raw);
+  return CID.createV1(0x0129, mh).toString(); // 0x0129 = dag-json codec
+}
+\end{lstlisting}
+
+\subsection{Backend Pinning API}
+
+The backend is a minimal Express.js server (ESM, Node.js $\geq$ 20). Its sole purpose is to accept a \texttt{\{title, body\}} JSON payload, re-encode it as DAG-JSON, pin the block to the local Kubo node via \texttt{/api/v0/block/put}, and return the computed CID and bytes32 digest.
+
+Server-side re-encoding is a security measure: it prevents a malicious client from pinning arbitrary content while claiming a different CID. The backend rejects any request where the client-supplied CID or bytes32 does not match the server-computed value.
+
+\begin{lstlisting}[style=command]
+POST /api/ipfs/pin
+Content-Type: application/json
+
+{ "title": "Hello", "body": "World", "cid": "bafy...", "bytes32": "0x..." }
+
+-> 200 { "cid": "bafy...", "bytes32": "0x..." }
+-> 400 if CID mismatch
+-> 502 if Kubo is unreachable
+\end{lstlisting}
+
+\subsection{Frontend}
+
+The frontend is an Angular 20 standalone application styled with Ionic 8 components. It uses Angular signals for reactive state management instead of RxJS observables, which reduces boilerplate and improves change-detection performance.
+
+\subsubsection{WalletService}
+
+\texttt{WalletService} wraps MetaMask via \texttt{ethers.BrowserProvider}. On \texttt{connect()}, it:
+\begin{enumerate}
+  \item Calls \texttt{eth\_requestAccounts} to prompt MetaMask.
+  \item Switches MetaMask to UZHETH PoS (chainId 70207) via \texttt{wallet\_switchEthereumChain}, adding the network automatically if not present.
+  \item Attempts ENS name resolution via the connected provider (falls back to a shortened hex address, since UZHETH PoS does not run the ENS registry).
+\end{enumerate}
+
+Reactive state is exposed as read-only signals: \texttt{address}, \texttt{ensName}, \texttt{connecting}, and \texttt{displayName} (computed).
+
+\subsubsection{IpfsService}
+
+\texttt{IpfsService} manages an in-browser Helia node~\cite{helia2023} backed by IndexedDB for persistent block storage. All Helia imports are dynamic (\texttt{await import(...)}) to avoid bundler issues with ESM-only packages. The service exposes:
+\begin{itemize}
+  \item \texttt{upload(content)} – encodes content, caches the block, calls the backend, and returns \texttt{\{cid, bytes32\}}.
+  \item \texttt{fetchByBytes32(hex)} – reconstructs the CID, checks the local Helia cache first, then falls back to the configured IPFS gateway (\texttt{https://dweb.link}).
+\end{itemize}
+
+\subsubsection{ForumService}
+
+\texttt{ForumService} wraps the \texttt{Forum} contract using a human-readable ABI string array and ethers.js v6 \texttt{Contract}. It maintains two contract instances: a read-only instance backed by a \texttt{JsonRpcProvider} and a write instance re-instantiated on demand with the connected signer. Key methods:
+\begin{itemize}
+  \item \texttt{getPosts(offset, limit)} – calls \texttt{getPosts} on the contract, then resolves IPFS content and ENS names for each post.
+  \item \texttt{createPost(title, body)} – uploads to IPFS, obtains the bytes32 digest, sends the transaction, waits for receipt, and returns the new post ID.
+  \item \texttt{likePost(postId)} / \texttt{likeComment(commentId)} – sends the like transaction.
+\end{itemize}
+
+\subsubsection{Pages and Components}
+
+\begin{itemize}
+  \item \textbf{HomePage} – paginated feed with pull-to-refresh, infinite scroll, and skeleton loading states. Each card shows title, author, timestamp, like count, and comment count.
+  \item \textbf{PostDetailPage} – single post view with the full body text and a threaded comment section. A textarea allows submitting a new top-level comment.
+  \item \textbf{CreatePostPage} – form with title (max 200 characters) and body (max 50\,000 characters) inputs, character counters, and a submit button that is disabled while the title or body is empty or while a submission is in progress.
+  \item \textbf{CommentThreadComponent} – recursive standalone component. At depth 0 it eagerly loads replies; at deeper levels replies are loaded lazily on user interaction. Visual nesting is capped at depth 4.
+\end{itemize}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Testing}
+\label{sec:testing}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\subsection{Smart Contract Tests}
+
+The smart contract is tested with Hardhat and Mocha/Chai. The test suite in \texttt{test/Forum.test.js} covers the following cases:
+
+\begin{table}[htbp]
+  \centering
+  \begin{tabular}{lll}
+    \hline
+    \textbf{Test case} & \textbf{Expected result} & \textbf{Pass} \\
+    \hline
+    Create post with valid bytes32 hash & Post stored, event emitted & \checkmark \\
+    Create post with zero hash & Revert: "contentHash required" & \checkmark \\
+    Retrieve post by ID & Correct fields returned & \checkmark \\
+    Paginated \texttt{getPosts} & Newest-first order, correct slice & \checkmark \\
+    Like a post & \texttt{likeCount} incremented & \checkmark \\
+    Like a post twice (same address) & Revert: "Already liked" & \checkmark \\
+    Create top-level comment & Stored, attached to post & \checkmark \\
+    Create reply comment & Stored, attached to parent & \checkmark \\
+    Create comment with invalid postId & Revert: "Post not found" & \checkmark \\
+    Create reply with parent on different post & Revert: "Parent/post mismatch" & \checkmark \\
+    Like a comment & \texttt{likeCount} incremented & \checkmark \\
+    Like a comment twice (same address) & Revert: ``Already liked'' & \checkmark \\
+    \hline
+  \end{tabular}
+  \caption{Smart contract test cases.}
+  \label{tab:tests}
+\end{table}
+
+All tests pass on the local Hardhat network. To run them:
+
+\begin{lstlisting}[style=command]
+npx hardhat test
+\end{lstlisting}
+
+\subsection{End-to-End Manual Testing}
+
+End-to-end testing was performed with two browser windows simultaneously, each connected to a different MetaMask account on UZHETH PoS.
+
+\paragraph{Test scenario 1 – Cross-user post visibility.}
+Account~A creates a post. After the transaction is confirmed, Account~B refreshes the feed and sees the post with the correct title and body.
+
+\paragraph{Test scenario 2 – Likes.}
+Account~B clicks the like button on a post authored by Account~A. The like count increments on-chain. Account~A refreshes and sees the updated count. Clicking like again from Account~B triggers a MetaMask transaction that reverts with ``Already liked this post''.
+
+\paragraph{Test scenario 3 – Nested comments.}
+Account~A adds a top-level comment on a post. Account~B adds a reply to that comment (\texttt{parentCommentId} $>$ 0). The frontend renders the reply indented under the parent comment in Account~A's browser after refresh.
+
+\paragraph{Test scenario 4 – Content integrity.}
+A post's body is fetched by reconstructing the CID from the on-chain bytes32 digest and requesting the block from IPFS. The decoded content exactly matches what was submitted, confirming the DAG-JSON encode/decode round-trip is lossless.
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.75\linewidth]{feed.png}
+  \caption{Forum feed showing posts created by different accounts.}
+  \label{fig:feed}
+\end{figure}
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.75\linewidth]{post.png}
+  \caption{Post detail page with nested comments.}
+  \label{fig:post}
+\end{figure}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Limitations and Future Work}
+\label{sec:limitations}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\subsection{IPFS Availability}
+
+In the current setup the IPFS backend and Kubo daemon must be running on the same machine as the user. Other participants can read post content only after the blocks have propagated to the public IPFS swarm, which can take several minutes and is not guaranteed. A production deployment would use a dedicated pinning service (e.g.\ Pinata or web3.storage) to ensure immediate global availability.
+
+\subsection{No Content Moderation}
+
+The contract applies no content policy: any valid Ethereum address can create any post or comment. The only on-chain validation is that the \texttt{contentHash} is non-zero and that parent-comment relationships are consistent. Adding a moderation mechanism (e.g.\ a flag-and-vote system or an owner-controlled blocklist) would require significant contract extensions.
+
+\subsection{Scalability}
+
+The \texttt{getPosts} function iterates over posts in memory. With a very large number of posts this could approach the block gas limit if called from a write context, though in practice it is a \texttt{view} function and is therefore not gas-limited. A more scalable approach would use off-chain indexing (e.g.\ The Graph protocol) to serve paginated feeds.
+
+\subsection{No Edit or Delete}
+
+Once a post or comment is created, it cannot be edited or deleted. The immutability is a feature from a censorship-resistance perspective, but it also means that accidental or harmful content cannot be removed. A future version could allow the author to overwrite the \texttt{contentHash} (pointing to a tombstone CID) and emit an edit event.
+
+\subsection{Subgraph Indexing}
+
+No The~Graph subgraph is currently implemented. All feed queries go directly to the contract's \texttt{getPosts} view function, which is subject to the hard cap of 100 posts per call and cannot efficiently filter or sort by arbitrary criteria. Deploying a subgraph that indexes \texttt{PostCreated}, \texttt{CommentCreated}, \texttt{PostLiked}, and \texttt{CommentLiked} events would enable fast, flexible querying of historical data without touching on-chain storage at query time. The deploy script already exports the ABI to \texttt{subgraph/abis/Forum.json} in anticipation of this.
+
+\subsection{Gas Costs}
+
+Each post creation, comment, and like requires an on-chain transaction. At scale, this could become expensive. Layer-2 solutions or optimistic rollups could reduce costs while preserving the security guarantees of the base layer.
+
+\subsection{ENS on UZHETH}
+
+ENS name resolution falls back to the connected address shortened to eight characters because UZHETH PoS does not run the ENS registry. A real deployment on Ethereum mainnet or a testnet with ENS support would display human-readable names for all participants.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Conclusion}
+\label{sec:conclusion}
+% ─────────────────────────────────────────────────────────────────────────────
+
+This project demonstrates that a functional, censorship-resistant social forum can be built with a relatively small amount of code by combining two complementary decentralised technologies: a smart contract for social rules and metadata, and IPFS for content storage. The key insight is that only the 32-byte SHA-256 digest of the content needs to be stored on-chain; this keeps gas costs low and independent of post length, while IPFS guarantees content integrity via the same digest.
+
+The implementation covers the full stack: a Solidity smart contract deployed on UZHETH PoS, a Node.js backend for IPFS pinning, and an Angular/Ionic frontend with MetaMask integration and in-browser IPFS caching via Helia. End-to-end tests confirm that posts and comments written by one account are immediately readable by other accounts, and that the like-once invariant is enforced on-chain.
+
+Future work should focus on IPFS availability guarantees, content moderation, scalability via off-chain indexing, and exploring Layer-2 deployment to reduce transaction costs.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section*{Author Contributions}
+% ─────────────────────────────────────────────────────────────────────────────
+
+The authors conceived, designed, developed, and wrote this report based on literature review and critical analysis of the source material referenced. The report was produced abiding to the rules of student conduct and anti-plagiarism.
+
+\bibliographystyle{ieeetr}
+\bibliography{references}
+
+\end{document}

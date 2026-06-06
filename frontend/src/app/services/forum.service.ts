@@ -186,7 +186,13 @@ export class ForumService {
   async getPostComments(postId: number): Promise<CommentDisplay[]> {
     const userAddr = this.wallet.address();
     const raws: any[] = await this._read().getPostComments(postId);
-    return Promise.all(raws.map((r) => this._mapRawComment(r, userAddr)));
+    const comments = await Promise.all(raws.map((r) => this._mapRawComment(r, userAddr)));
+    // Populate replyCount so CommentThreadComponent can show/eagerly load replies.
+    await Promise.all(comments.map(async (c) => {
+      const replyRaws: any[] = await this._read().getCommentReplies(c.id);
+      c.replyCount = replyRaws.length;
+    }));
+    return comments;
   }
 
   async getCommentReplies(commentId: number): Promise<CommentDisplay[]> {
