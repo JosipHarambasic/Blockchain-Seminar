@@ -1,5 +1,5 @@
 import {
-  Component, OnInit, signal, computed, inject,
+  Component, OnInit, signal, computed, inject, effect,
 } from "@angular/core";
 import { CommonModule }  from "@angular/common";
 import { Router }        from "@angular/router";
@@ -8,13 +8,13 @@ import {
   IonCard, IonCardHeader, IonCardTitle, IonCardSubtitle, IonCardContent,
   IonFab, IonFabButton, IonRefresher, IonRefresherContent,
   IonSkeletonText, IonIcon, IonLabel, IonChip, IonText, IonInfiniteScroll,
-  IonInfiniteScrollContent, IonBadge,
+  IonInfiniteScrollContent,
   ToastController, LoadingController,
 } from "@ionic/angular/standalone";
 import { addIcons } from "ionicons";
 import {
   addOutline, heartOutline, heart, chatbubbleOutline,
-  chevronForwardOutline, walletOutline, refreshOutline,
+  chevronForwardOutline, walletOutline, refreshOutline, logOutOutline,
 } from "ionicons/icons";
 
 import { WalletService }   from "../../services/web3.service";
@@ -33,7 +33,7 @@ const PAGE_SIZE = 10;
     IonCard, IonCardHeader, IonCardTitle, IonCardSubtitle, IonCardContent,
     IonFab, IonFabButton, IonRefresher, IonRefresherContent,
     IonSkeletonText, IonIcon, IonLabel, IonChip, IonText, IonInfiniteScroll,
-    IonInfiniteScrollContent, IonBadge,
+    IonInfiniteScrollContent,
   ],
 })
 export class HomePage implements OnInit {
@@ -56,13 +56,20 @@ export class HomePage implements OnInit {
   constructor() {
     addIcons({
       addOutline, heartOutline, heart, chatbubbleOutline,
-      chevronForwardOutline, walletOutline, refreshOutline,
+      chevronForwardOutline, walletOutline, refreshOutline, logOutOutline,
+    });
+
+    // Re-evaluate liked state whenever the connected address changes
+    // (connect, disconnect, or MetaMask account switch).
+    effect(() => {
+      const address = this.wallet.address(); // tracked
+      if (address !== undefined) {
+        this.loadPosts(true);
+      }
     });
   }
 
-  ngOnInit(): void {
-    this.loadPosts(true);
-  }
+  ngOnInit(): void {}
 
   // ─── Data loading ─────────────────────────────────────────────────────────
 
@@ -102,6 +109,10 @@ export class HomePage implements OnInit {
   }
 
   // ─── Wallet ───────────────────────────────────────────────────────────────
+
+  disconnectWallet(): void {
+    this.wallet.disconnect();
+  }
 
   async connectWallet(): Promise<void> {
     const loader = await this.loading.create({ message: "Connecting wallet…" });

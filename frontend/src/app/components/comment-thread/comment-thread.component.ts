@@ -24,8 +24,8 @@ import { ForumService, CommentDisplay }      from "../../services/forum.service"
   standalone: true,
   imports: [
     CommonModule, FormsModule,
-    IonCard, IonCardContent, IonButton, IonIcon, IonText, IonLabel,
-    IonItem, IonTextarea, IonChip, IonSpinner,
+    IonCard, IonCardContent, IonButton, IonIcon, IonText,
+    IonItem, IonTextarea, IonSpinner,
   ],
 })
 export class CommentThreadComponent implements OnInit {
@@ -50,7 +50,6 @@ export class CommentThreadComponent implements OnInit {
   }
 
   ngOnInit(): void {
-    // Eagerly load replies for top-level; deeper nesting loads on demand
     if (this.depth === 0 && (this.comment.replyCount ?? 0) > 0) {
       this.loadReplies();
     }
@@ -59,8 +58,6 @@ export class CommentThreadComponent implements OnInit {
   get replyCount(): number {
     return this.comment.replyCount ?? 0;
   }
-
-  // ─── Replies ──────────────────────────────────────────────────────────────
 
   async toggleReplies(): Promise<void> {
     if (this.showReplies()) {
@@ -85,8 +82,6 @@ export class CommentThreadComponent implements OnInit {
     }
   }
 
-  // ─── Likes ────────────────────────────────────────────────────────────────
-
   async toggleLike(): Promise<void> {
     if (this.comment.liked || !this.wallet.address()) return;
     try {
@@ -96,8 +91,6 @@ export class CommentThreadComponent implements OnInit {
       await this._showToast(err?.message ?? "Like failed", "danger");
     }
   }
-
-  // ─── Reply submission ─────────────────────────────────────────────────────
 
   toggleReplyBox(): void {
     if (!this.wallet.address()) {
@@ -124,8 +117,6 @@ export class CommentThreadComponent implements OnInit {
       await loader.dismiss();
     }
   }
-
-  // ─── Helpers ─────────────────────────────────────────────────────────────
 
   private async _showToast(message: string, color: string): Promise<void> {
     const t = await this.toast.create({ message, color, duration: 3000, position: "bottom" });

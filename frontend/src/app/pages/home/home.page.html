@@ -9,6 +9,9 @@
         <ion-chip color="light">
           <ion-label>{{ wallet.displayName() }}</ion-label>
         </ion-chip>
+        <ion-button (click)="disconnectWallet()" fill="clear" color="light" size="small">
+          <ion-icon name="log-out-outline" slot="icon-only"></ion-icon>
+        </ion-button>
       } @else {
         <ion-button (click)="connectWallet()" fill="outline" color="light">
           <ion-icon name="wallet-outline" slot="start"></ion-icon>

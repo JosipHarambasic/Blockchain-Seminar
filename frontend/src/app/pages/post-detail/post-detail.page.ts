@@ -68,7 +68,6 @@ export class PostDetailPage implements OnInit {
         this.forum.getPostComments(this.postId),
       ]);
       this.post.set(post);
-      // Build nested tree: attach top-level comments (parentCommentId === 0)
       this.comments.set(comments.filter((c) => c.parentCommentId === 0));
     } catch (err: any) {
       await this._showToast(err?.message ?? "Failed to load post", "danger");
@@ -77,8 +76,6 @@ export class PostDetailPage implements OnInit {
       this.isLoading.set(false);
     }
   }
-
-  // ─── Wallet ───────────────────────────────────────────────────────────────
 
   async connectWallet(): Promise<void> {
     const loader = await this.loading.create({ message: "Connecting wallet…" });
@@ -94,8 +91,6 @@ export class PostDetailPage implements OnInit {
     }
   }
 
-  // ─── Likes ────────────────────────────────────────────────────────────────
-
   async toggleLikePost(): Promise<void> {
     const p = this.post();
     if (!p || p.liked || !this.wallet.address()) return;
@@ -106,8 +101,6 @@ export class PostDetailPage implements OnInit {
       await this._showToast(err?.message ?? "Like failed", "danger");
     }
   }
-
-  // ─── Commenting ───────────────────────────────────────────────────────────
 
   async submitComment(): Promise<void> {
     if (!this.newComment.trim() || this.isSending()) return;
@@ -121,7 +114,7 @@ export class PostDetailPage implements OnInit {
     try {
       await this.forum.createComment(this.postId, 0, this.newComment.trim());
       this.newComment = "";
-      await this.loadPost(); // refresh
+      await this.loadPost();
     } catch (err: any) {
       await this._showToast(err?.message ?? "Failed to submit comment", "danger");
     } finally {
@@ -129,8 +122,6 @@ export class PostDetailPage implements OnInit {
       await loader.dismiss();
     }
   }
-
-  // ─── Helpers ─────────────────────────────────────────────────────────────
 
   private async _showToast(message: string, color: string): Promise<void> {
     const t = await this.toast.create({ message, color, duration: 3000, position: "bottom" });
