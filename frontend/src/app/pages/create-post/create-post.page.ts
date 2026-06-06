@@ -28,21 +28,32 @@ import { ForumService }   from "../../services/forum.service";
     IonSpinner,
   ],
 })
+/**
+ * CreatePostPage
+ *
+ * Form for authoring a new forum post.  On submit the body is encoded as a
+ * DAG-JSON block, pinned to IPFS via the backend, and the resulting 32-byte
+ * SHA-256 digest is stored on-chain by calling Forum.createPost(bytes32).
+ * The wallet must be connected before a post can be submitted.
+ */
 export class CreatePostPage {
+  // ── DI ──────────────────────────────────────────────────────────────────
   readonly wallet  = inject(WalletService);
   private  forum   = inject(ForumService);
   private  router  = inject(Router);
   private  toast   = inject(ToastController);
   private  loading = inject(LoadingController);
 
+  // ── Form state ───────────────────────────────────────────────────────────
   title      = "";
   body       = "";
-  isSending  = signal(false);
+  isSending  = signal(false); // true while IPFS upload + on-chain tx are in flight
 
   constructor() {
     addIcons({ sendOutline });
   }
 
+  /** Submit is enabled only when both fields are non-empty and no tx is in flight. */
   get canSubmit(): boolean {
     return this.title.trim().length > 0 && this.body.trim().length > 0 && !this.isSending();
   }
@@ -72,10 +83,11 @@ export class CreatePostPage {
     await loader.present();
 
     try {
+      // createPost: pins {title,body} to IPFS, then stores the bytes32 digest on-chain.
       const postId = await this.forum.createPost(this.title.trim(), this.body.trim());
       await loader.dismiss();
       await this._showToast("Post published!", "success");
-      await this.router.navigate(["/post", postId]);
+      await this.router.navigate(["/post", postId]); // navigate to the newly created post
     } catch (err: any) {
       await loader.dismiss();
       await this._showToast(err?.message ?? "Failed to create post", "danger");

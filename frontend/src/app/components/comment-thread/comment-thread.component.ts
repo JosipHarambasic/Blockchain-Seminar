@@ -28,21 +28,34 @@ import { ForumService, CommentDisplay }      from "../../services/forum.service"
     IonItem, IonTextarea, IonSpinner,
   ],
 })
+/**
+ * CommentThreadComponent
+ *
+ * Recursive standalone component that renders a single comment and, optionally,
+ * its nested replies.  Depth 0 = direct child of a post; each level of nesting
+ * increments depth by 1.  The Reply button is hidden at depth ≥ 4 to keep the
+ * UI readable.  Replies at depth 0 are eagerly loaded on init (they are already
+ * counted in the post's commentCount); deeper replies are loaded lazily when the
+ * user expands the thread.
+ */
 export class CommentThreadComponent implements OnInit {
-  @Input() comment!: CommentDisplay;
-  @Input() postId!:  number;
-  @Input() depth   = 0;
+  // ── Inputs ───────────────────────────────────────────────────────────────
+  @Input() comment!: CommentDisplay; // comment data resolved from IPFS + chain
+  @Input() postId!:  number;         // needed when submitting a reply
+  @Input() depth   = 0;             // current nesting level (0 = top-level)
 
+  // ── DI ──────────────────────────────────────────────────────────────────
   readonly wallet    = inject(WalletService);
   private  forum     = inject(ForumService);
   private  toast     = inject(ToastController);
   private  loading   = inject(LoadingController);
 
-  replies      = signal<CommentDisplay[]>([]);
-  showReplies  = signal(false);
-  showReplyBox = signal(false);
-  replyText    = "";
-  isSending    = signal(false);
+  // ── State ────────────────────────────────────────────────────────────────
+  replies          = signal<CommentDisplay[]>([]);
+  showReplies      = signal(false);
+  showReplyBox     = signal(false);
+  replyText        = "";
+  isSending        = signal(false); // true while IPFS upload + on-chain tx are in flight
   isLoadingReplies = signal(false);
 
   constructor() {

@@ -34,7 +34,16 @@ import { CommentThreadComponent }                from "../../components/comment-
     CommentThreadComponent,
   ],
 })
+/**
+ * PostDetailPage
+ *
+ * Displays a single post (title, body, likes) and its threaded comment section.
+ * The post ID is read from the route parameter. Post data and top-level comments
+ * are fetched in parallel. The page re-fetches after each new comment so the
+ * freshly pinned content appears without a manual refresh.
+ */
 export class PostDetailPage implements OnInit {
+  // ── DI ──────────────────────────────────────────────────────────────────
   readonly wallet  = inject(WalletService);
   private  forum   = inject(ForumService);
   private  route   = inject(ActivatedRoute);
@@ -42,10 +51,11 @@ export class PostDetailPage implements OnInit {
   private  toast   = inject(ToastController);
   private  loading = inject(LoadingController);
 
+  // ── State ────────────────────────────────────────────────────────────────
   post       = signal<PostDisplay | null>(null);
   comments   = signal<CommentDisplay[]>([]);
   isLoading  = signal(false);
-  isSending  = signal(false);
+  isSending  = signal(false);  // true while IPFS upload + on-chain tx are in flight
   newComment = "";
 
   postId!: number;
@@ -63,11 +73,14 @@ export class PostDetailPage implements OnInit {
     if (this.isLoading()) return;
     this.isLoading.set(true);
     try {
+      // Fetch post metadata and top-level comments in parallel to reduce latency.
+      // getPostComments already resolves IPFS content and reply counts for each comment.
       const [post, comments] = await Promise.all([
         this.forum.getPost(this.postId),
         this.forum.getPostComments(this.postId),
       ]);
       this.post.set(post);
+      // Only top-level comments are rendered here; replies are loaded by CommentThreadComponent.
       this.comments.set(comments.filter((c) => c.parentCommentId === 0));
     } catch (err: any) {
       await this._showToast(err?.message ?? "Failed to load post", "danger");
@@ -96,6 +109,7 @@ export class PostDetailPage implements OnInit {
     if (!p || p.liked || !this.wallet.address()) return;
     try {
       await this.forum.likePost(p.id);
+      // Optimistic update: reflect the new like count locally without re-fetching.
       this.post.update((cur) => cur ? { ...cur, liked: true, likeCount: cur.likeCount + 1 } : cur);
     } catch (err: any) {
       await this._showToast(err?.message ?? "Like failed", "danger");
@@ -112,9 +126,11 @@ export class PostDetailPage implements OnInit {
     const loader = await this.loading.create({ message: "Submitting comment…" });
     await loader.present();
     try {
+      // parentCommentId=0 means top-level comment (not a reply to another comment).
+      // createComment pins the body to IPFS first, then submits the on-chain tx.
       await this.forum.createComment(this.postId, 0, this.newComment.trim());
       this.newComment = "";
-      await this.loadPost();
+      await this.loadPost(); // refresh to show the newly published comment
     } catch (err: any) {
       await this._showToast(err?.message ?? "Failed to submit comment", "danger");
     } finally {
