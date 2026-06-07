@@ -12,7 +12,7 @@ export const environment = {
   rpcUrl: "http://130.60.144.77:8554",
 
   // Deployed Forum contract address — update after running deploy.js
-  contractAddress: "0x554b17ADAc66fDbE30e34217Cd1A2C3D4095Fc8e",
+  contractAddress: "0x06FFeAC90827CeA4050eb64f0010e8096654dF80",
 
   // IPFS gateway used for fallback reads (if the local Helia node doesn't have the block).
   ipfsGateway: "https://dweb.link/ipfs/",

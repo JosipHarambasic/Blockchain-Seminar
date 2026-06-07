@@ -47,6 +47,9 @@ contract Forum {
     /// @dev Maps parentCommentId => ordered list of reply commentIds.
     mapping(uint256 => uint256[]) private _commentReplyIds;
 
+    /// @dev Maps author address => ordered list of postIds created by that author.
+    mapping(address => uint256[]) private _authorPostIds;
+
     /// @dev Tracks whether a user has already liked a specific post.
     mapping(address => mapping(uint256 => bool)) private _likedPost;
 
@@ -107,6 +110,8 @@ contract Forum {
             likeCount:    0,
             commentCount: 0
         });
+
+        _authorPostIds[msg.sender].push(postId);
 
         emit PostCreated(postId, msg.sender, _contentHash, block.timestamp);
     }
@@ -244,6 +249,22 @@ contract Forum {
             out[i] = _comments[ids[i]];
         }
         return out;
+    }
+
+    /**
+     * @notice Returns all posts created by `_author`, newest-first.
+     */
+    function getPostsByAuthor(address _author)
+        external
+        view
+        returns (Post[] memory posts)
+    {
+        uint256[] storage ids = _authorPostIds[_author];
+        uint256 count = ids.length;
+        posts = new Post[](count);
+        for (uint256 i = 0; i < count; i++) {
+            posts[i] = _posts[ids[count - 1 - i]]; // newest-first
+        }
     }
 
     /**

@@ -1,104 +1,126 @@
-<ion-header>
-  <ion-toolbar color="primary">
-    <ion-title>
-      <ion-icon name="chatbubble-outline" style="vertical-align:middle;margin-right:6px"></ion-icon>
-      Decentralised Forum
-    </ion-title>
-    <ion-buttons slot="end">
-      @if (wallet.address()) {
-        <ion-chip color="light">
-          <ion-label>{{ wallet.displayName() }}</ion-label>
-        </ion-chip>
-        <ion-button (click)="disconnectWallet()" fill="clear" color="light" size="small">
-          <ion-icon name="log-out-outline" slot="icon-only"></ion-icon>
-        </ion-button>
-      } @else {
-        <ion-button (click)="connectWallet()" fill="outline" color="light">
-          <ion-icon name="wallet-outline" slot="start"></ion-icon>
-          Connect
-        </ion-button>
-      }
-    </ion-buttons>
-  </ion-toolbar>
-</ion-header>
-
-<ion-content>
+<ion-content class="forum-content">
   <ion-refresher slot="fixed" (ionRefresh)="handleRefresh($event)">
     <ion-refresher-content></ion-refresher-content>
   </ion-refresher>
 
-  <!-- Skeleton while loading for the first time -->
-  @if (isLoading() && posts().length === 0) {
-    @for (s of skeletons; track $index) {
-      <ion-card>
-        <ion-card-header>
-          <ion-skeleton-text animated style="width:60%;height:18px"></ion-skeleton-text>
-          <ion-skeleton-text animated style="width:40%;height:14px;margin-top:4px"></ion-skeleton-text>
-        </ion-card-header>
-        <ion-card-content>
-          <ion-skeleton-text animated style="width:100%;height:14px"></ion-skeleton-text>
-          <ion-skeleton-text animated style="width:80%;height:14px;margin-top:4px"></ion-skeleton-text>
-        </ion-card-content>
-      </ion-card>
-    }
-  }
+  <div class="layout-wrapper">
 
-  <!-- Post list -->
-  @for (post of posts(); track post.id) {
-    <ion-card button (click)="openPost(post.id)">
-      <ion-card-header>
-        <ion-card-title>{{ post.title || '(no title)' }}</ion-card-title>
-        <ion-card-subtitle>
-          {{ post.authorDisplay }} &bull; {{ post.timestampFormatted }}
-        </ion-card-subtitle>
-      </ion-card-header>
+    <!-- ── Sidebar ──────────────────────────────────────────────────────── -->
+    <aside class="sidebar">
+      <div class="sidebar-logo">
+        <ion-icon name="chatbubble-outline"></ion-icon>
+        <span>DeForum</span>
+      </div>
 
-      <ion-card-content>
-        <p class="post-body-preview">{{ post.body | slice:0:200 }}{{ post.body.length > 200 ? '…' : '' }}</p>
+      <div class="wallet-panel">
+        <p class="wallet-label">Wallet Connection Status</p>
+        @if (wallet.address()) {
+          <div class="wallet-status">
+            <span class="dot connected"></span>
+            <span>Connected</span>
+            <span class="separator">/</span>
+            <span>Connected</span>
+          </div>
+          <p class="wallet-addr">{{ wallet.displayName() }}</p>
+        } @else {
+          <div class="wallet-status">
+            <span class="dot disconnected"></span>
+            <span>Disconnected</span>
+          </div>
+        }
+        <ion-button expand="block" size="small" class="connect-btn"
+          (click)="wallet.address() ? disconnectWallet() : connectWallet()">
+          {{ wallet.address() ? 'Disconnect' : 'Connect Wallet' }}
+        </ion-button>
+      </div>
 
-        <div class="post-actions">
-          <!-- Like -->
-          <ion-button fill="clear" size="small" (click)="toggleLike(post, $event)">
-            <ion-icon [name]="post.liked ? 'heart' : 'heart-outline'"
-                      [color]="post.liked ? 'danger' : 'medium'"
-                      slot="start">
-            </ion-icon>
-            <ion-text color="medium">{{ post.likeCount }}</ion-text>
-          </ion-button>
+      <nav class="sidebar-nav">
+        <a class="nav-item" [class.active]="view() === 'all'" (click)="setView('all')">
+          <ion-icon name="home-outline"></ion-icon> Home
+        </a>
+        <a class="nav-item" [class.active]="view() === 'mine'" (click)="setView('mine')">
+          <ion-icon name="document-text-outline"></ion-icon> My Posts
+        </a>
+      </nav>
+    </aside>
 
-          <!-- Comment count -->
-          <ion-button fill="clear" size="small" (click)="openPost(post.id)">
-            <ion-icon name="chatbubble-outline" color="medium" slot="start"></ion-icon>
-            <ion-text color="medium">{{ post.commentCount }}</ion-text>
-          </ion-button>
+    <!-- ── Main content ──────────────────────────────────────────────────── -->
+    <main class="main-content">
 
-          <div class="spacer"></div>
-
-          <ion-icon name="chevron-forward-outline" color="medium"></ion-icon>
+      <!-- Compose bar -->
+      <div class="compose-bar" (click)="openCreatePost()">
+        <div class="compose-avatar"
+             [style.background]="wallet.address() ? avatarColor(wallet.address()!) : '#d1d5db'">
+          <ion-icon [name]="wallet.address() ? avatarIcon(wallet.address()!) : 'person-outline'"></ion-icon>
         </div>
-      </ion-card-content>
-    </ion-card>
-  }
+        <span class="compose-placeholder">What's on your mind?</span>
+        <ion-icon name="add-circle" class="compose-add-icon"></ion-icon>
+      </div>
 
-  <!-- Empty state -->
-  @if (!isLoading() && posts().length === 0) {
-    <div class="empty-state">
-      <ion-icon name="chatbubble-outline" size="large" color="medium"></ion-icon>
-      <p>No posts yet. Be the first to post!</p>
-    </div>
-  }
+      <!-- Section label -->
+      <p class="section-label">{{ view() === 'mine' ? 'My posts' : 'Latest posts' }}</p>
 
-  <!-- Infinite scroll -->
-  @if (hasMore()) {
-    <ion-infinite-scroll (ionInfinite)="loadMore($event)">
-      <ion-infinite-scroll-content loadingText="Loading more…"></ion-infinite-scroll-content>
-    </ion-infinite-scroll>
-  }
+      <!-- Skeletons -->
+      @if ((view() === 'all' ? isLoading() : isMyLoading()) && visiblePosts().length === 0) {
+        <div class="posts-grid">
+          @for (s of skeletons; track $index) {
+            <div class="post-card">
+              <ion-skeleton-text animated style="width:50%;height:14px;border-radius:6px"></ion-skeleton-text>
+              <ion-skeleton-text animated style="width:35%;height:11px;margin-top:6px;border-radius:6px"></ion-skeleton-text>
+              <ion-skeleton-text animated style="width:100%;height:11px;margin-top:16px;border-radius:6px"></ion-skeleton-text>
+              <ion-skeleton-text animated style="width:75%;height:11px;margin-top:5px;border-radius:6px"></ion-skeleton-text>
+            </div>
+          }
+        </div>
+      }
+
+      <!-- Posts grid -->
+      <div class="posts-grid">
+        @for (post of visiblePosts(); track post.id) {
+          <div class="post-card" (click)="openPost(post.id)">
+
+            <div class="post-card-top">
+              <div class="post-avatar" [style.background]="avatarColor(post.author)">
+                <ion-icon [name]="avatarIcon(post.author)"></ion-icon>
+              </div>
+              <div class="post-meta">
+                <div class="post-author">{{ post.authorDisplay }}</div>
+                <div class="post-date">{{ post.timestampFormatted }}</div>
+              </div>
+            </div>
+
+            <p class="post-preview">{{ post.body | slice:0:130 }}{{ post.body.length > 130 ? '…' : '' }}</p>
+
+            <div class="post-card-footer">
+              <button class="comment-btn" (click)="openPost(post.id)">
+                <ion-icon name="chatbubble-outline"></ion-icon>
+                {{ post.commentCount }}
+              </button>
+              <button class="like-btn" [class.liked]="post.liked" (click)="toggleLike(post, $event)">
+                <ion-icon [name]="post.liked ? 'heart' : 'heart-outline'"></ion-icon>
+                {{ post.likeCount }}
+              </button>
+            </div>
+
+          </div>
+        }
+      </div>
+
+      <!-- Empty state -->
+      @if (!(view() === 'all' ? isLoading() : isMyLoading()) && visiblePosts().length === 0) {
+        <div class="empty-state">
+          <ion-icon name="chatbubble-outline"></ion-icon>
+          <p>No posts yet. Be the first to post!</p>
+        </div>
+      }
+
+      <!-- Infinite scroll -->
+      @if (hasMore()) {
+        <ion-infinite-scroll (ionInfinite)="loadMore($event)">
+          <ion-infinite-scroll-content loadingText="Loading more…"></ion-infinite-scroll-content>
+        </ion-infinite-scroll>
+      }
+
+    </main>
+  </div>
 </ion-content>
-
-<!-- FAB to create post -->
-<ion-fab vertical="bottom" horizontal="end" slot="fixed">
-  <ion-fab-button color="primary" (click)="openCreatePost()" title="Create post">
-    <ion-icon name="add-outline"></ion-icon>
-  </ion-fab-button>
-</ion-fab>

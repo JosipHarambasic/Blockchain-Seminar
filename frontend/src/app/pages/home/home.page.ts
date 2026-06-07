@@ -4,17 +4,19 @@ import {
 import { CommonModule }  from "@angular/common";
 import { Router }        from "@angular/router";
 import {
-  IonHeader, IonToolbar, IonTitle, IonContent, IonButtons, IonButton,
-  IonCard, IonCardHeader, IonCardTitle, IonCardSubtitle, IonCardContent,
-  IonFab, IonFabButton, IonRefresher, IonRefresherContent,
-  IonSkeletonText, IonIcon, IonLabel, IonChip, IonText, IonInfiniteScroll,
+  IonContent, IonButton,
+  IonRefresher, IonRefresherContent,
+  IonSkeletonText, IonIcon, IonInfiniteScroll,
   IonInfiniteScrollContent,
   ToastController, LoadingController,
 } from "@ionic/angular/standalone";
 import { addIcons } from "ionicons";
 import {
-  addOutline, heartOutline, heart, chatbubbleOutline,
-  chevronForwardOutline, walletOutline, refreshOutline, logOutOutline,
+  heartOutline, heart, chatbubbleOutline,
+  homeOutline, documentTextOutline, bookmarkOutline, settingsOutline,
+  addCircle, personOutline,
+  happy, planet, leaf, moon, sunny, snow, thunderstorm,
+  flame, diamond, musicalNotes, pizza, bicycle, boat, globe, star, rocket,
 } from "ionicons/icons";
 
 import { WalletService }   from "../../services/web3.service";
@@ -29,10 +31,9 @@ const PAGE_SIZE = 10;
   standalone: true,
   imports: [
     CommonModule,
-    IonHeader, IonToolbar, IonTitle, IonContent, IonButtons, IonButton,
-    IonCard, IonCardHeader, IonCardTitle, IonCardSubtitle, IonCardContent,
-    IonFab, IonFabButton, IonRefresher, IonRefresherContent,
-    IonSkeletonText, IonIcon, IonLabel, IonChip, IonText, IonInfiniteScroll,
+    IonContent, IonButton,
+    IonRefresher, IonRefresherContent,
+    IonSkeletonText, IonIcon, IonInfiniteScroll,
     IonInfiniteScrollContent,
   ],
 })
@@ -45,18 +46,26 @@ export class HomePage implements OnInit {
   private  loading = inject(LoadingController);
 
   // ── State ────────────────────────────────────────────────────────────────
-  posts     = signal<PostDisplay[]>([]);
-  total     = signal(0);
-  isLoading = signal(false);
-  hasMore   = computed(() => this.posts().length < this.total());
+  posts          = signal<PostDisplay[]>([]);
+  total          = signal(0);
+  isLoading      = signal(false);
+  isMyLoading    = signal(false);
+  view           = signal<'all' | 'mine'>('all');
+  myPosts        = signal<PostDisplay[]>([]);
+  myPostsLoaded  = signal(false);
+  hasMore        = computed(() => this.view() === 'all' && this.posts().length < this.total());
+  visiblePosts   = computed(() => this.view() === 'mine' ? this.myPosts() : this.posts());
 
   // ── Skeletons for initial load ───────────────────────────────────────────
   readonly skeletons = Array(5);
 
   constructor() {
     addIcons({
-      addOutline, heartOutline, heart, chatbubbleOutline,
-      chevronForwardOutline, walletOutline, refreshOutline, logOutOutline,
+      heartOutline, heart, chatbubbleOutline,
+      homeOutline, documentTextOutline, bookmarkOutline, settingsOutline,
+      addCircle, personOutline,
+      happy, planet, leaf, moon, sunny, snow, thunderstorm,
+      flame, diamond, musicalNotes, pizza, bicycle, boat, globe, star, rocket,
     });
 
     // Re-evaluate liked state whenever the connected address changes
@@ -65,6 +74,10 @@ export class HomePage implements OnInit {
       const address = this.wallet.address(); // tracked
       if (address !== undefined) {
         this.loadPosts(true);
+        if (address && this.view() === 'mine') {
+          this.myPostsLoaded.set(false);
+          this.loadMyPosts();
+        }
       }
     });
   }
@@ -89,13 +102,38 @@ export class HomePage implements OnInit {
   }
 
   async handleRefresh(event: CustomEvent): Promise<void> {
-    await this.loadPosts(true);
+    if (this.view() === 'mine') {
+      this.myPostsLoaded.set(false);
+      this.myPosts.set([]);
+      await this.loadMyPosts();
+    } else {
+      await this.loadPosts(true);
+    }
     (event.target as HTMLIonRefresherElement).complete();
   }
 
   async loadMore(event: CustomEvent): Promise<void> {
     await this.loadPosts(false);
     (event.target as HTMLIonInfiniteScrollElement).complete();
+  }
+
+  async loadMyPosts(): Promise<void> {
+    const addr = this.wallet.address();
+    if (!addr) {
+      await this._showToast("Connect your wallet to see your posts", "warning");
+      return;
+    }
+    if (this.isMyLoading()) return;
+    this.isMyLoading.set(true);
+    try {
+      const posts = await this.forum.getPostsByAuthor(addr);
+      this.myPosts.set(posts);
+      this.myPostsLoaded.set(true);
+    } catch (err: any) {
+      await this._showToast(err?.message ?? "Failed to load your posts", "danger");
+    } finally {
+      this.isMyLoading.set(false);
+    }
   }
 
   // ─── Navigation ───────────────────────────────────────────────────────────
@@ -108,10 +146,18 @@ export class HomePage implements OnInit {
     this.router.navigate(["/create"]);
   }
 
+  setView(v: 'all' | 'mine'): void {
+    this.view.set(v);
+    if (v === 'mine' && !this.myPostsLoaded()) this.loadMyPosts();
+  }
+
   // ─── Wallet ───────────────────────────────────────────────────────────────
 
   disconnectWallet(): void {
     this.wallet.disconnect();
+    this.view.set('all');
+    this.myPosts.set([]);
+    this.myPostsLoaded.set(false);
   }
 
   async connectWallet(): Promise<void> {
@@ -155,5 +201,20 @@ export class HomePage implements OnInit {
   private async _showToast(message: string, color: string): Promise<void> {
     const t = await this.toast.create({ message, color, duration: 3000, position: "bottom" });
     await t.present();
+  }
+
+  avatarColor(address: string): string {
+    const palette = ['#6366f1','#ec4899','#14b8a6','#f59e0b','#ef4444','#8b5cf6','#3b82f6','#10b981'];
+    const idx = parseInt(address.slice(-2), 16) % palette.length;
+    return palette[idx];
+  }
+
+  avatarIcon(address: string): string {
+    const icons = [
+      'happy','planet','leaf','moon','sunny','snow','thunderstorm',
+      'flame','diamond','musical-notes','pizza','bicycle','boat','globe','star','rocket',
+    ];
+    const idx = parseInt(address.slice(-4, -2), 16) % icons.length;
+    return icons[idx];
   }
 }

@@ -14,8 +14,8 @@
 @import "@ionic/angular/css/text-transformation.css";
 @import "@ionic/angular/css/flex-utils.css";
 
-/* Ionic v8 dark mode support */
-@import "@ionic/angular/css/palettes/dark.always.css" screen and (prefers-color-scheme: dark);
+/* Ionic v8 dark mode support — disabled to keep light design */
+/* @import "@ionic/angular/css/palettes/dark.always.css" screen and (prefers-color-scheme: dark); */
 
 /* Custom global overrides */
 ion-card {

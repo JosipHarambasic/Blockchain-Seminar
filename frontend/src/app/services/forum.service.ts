@@ -62,6 +62,7 @@ const FORUM_ABI: ethers.InterfaceAbi = [
   "function getPost(uint256 postId) view returns (tuple(uint256 id, address author, bytes32 contentHash, uint256 timestamp, uint256 likeCount, uint256 commentCount))",
   "function getPostComments(uint256 postId) view returns (tuple(uint256 id, uint256 postId, uint256 parentCommentId, address author, bytes32 contentHash, uint256 timestamp, uint256 likeCount)[])",
   "function getCommentReplies(uint256 commentId) view returns (tuple(uint256 id, uint256 postId, uint256 parentCommentId, address author, bytes32 contentHash, uint256 timestamp, uint256 likeCount)[])",
+  "function getPostsByAuthor(address author) view returns (tuple(uint256 id, address author, bytes32 contentHash, uint256 timestamp, uint256 likeCount, uint256 commentCount)[])",
   "function hasLikedPost(address user, uint256 postId) view returns (bool)",
   "function hasLikedComment(address user, uint256 commentId) view returns (bool)",
   "function postCount() view returns (uint256)",
@@ -175,6 +176,12 @@ export class ForumService {
     const [raws, total]: [any[], bigint] = await this._read().getPosts(offset, limit);
     const posts = await Promise.all(raws.map((r) => this._mapRawPost(r, userAddr)));
     return { posts, total: Number(total) };
+  }
+
+  async getPostsByAuthor(author: string): Promise<PostDisplay[]> {
+    const userAddr = this.wallet.address();
+    const raws: any[] = await this._read().getPostsByAuthor(author);
+    return Promise.all(raws.map((r) => this._mapRawPost(r, userAddr)));
   }
 
   async getPost(postId: number): Promise<PostDisplay> {

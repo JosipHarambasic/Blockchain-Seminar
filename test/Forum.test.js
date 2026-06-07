@@ -120,6 +120,13 @@ describe("Forum", function () {
       expect(topLevel.length).to.equal(1);
     });
 
+    it("reply to a comment does not increment post commentCount", async function () {
+      await forum.connect(bob).createComment(1n, 0n, HASH_C);   // top-level  → commentCount=1
+      await forum.connect(carol).createComment(1n, 1n, HASH_D); // reply      → must not increment
+      const post = await forum.getPost(1n);
+      expect(post.commentCount).to.equal(1n);
+    });
+
     it("reverts when parent comment belongs to a different post", async function () {
       await forum.connect(alice).createPost(HASH_B); // post id=2
       await forum.connect(bob).createComment(1n, 0n, HASH_C); // comment on post 1, id=1
@@ -242,6 +249,49 @@ describe("Forum", function () {
       await forum.connect(alice).createPost(HASH_A);
       const [posts] = await forum.getPosts(5n, 10n);
       expect(posts.length).to.equal(0);
+    });
+  });
+
+  // ─── getPostsByAuthor ──────────────────────────────────────────────────────
+
+  describe("getPostsByAuthor", function () {
+    it("returns empty array for an address with no posts", async function () {
+      const posts = await forum.getPostsByAuthor(alice.address);
+      expect(posts.length).to.equal(0);
+    });
+
+    it("returns all posts by the author, newest-first", async function () {
+      await forum.connect(alice).createPost(HASH_A); // id=1
+      await forum.connect(alice).createPost(HASH_B); // id=2
+      const posts = await forum.getPostsByAuthor(alice.address);
+      expect(posts.length).to.equal(2);
+      expect(posts[0].id).to.equal(2n); // newest first
+      expect(posts[1].id).to.equal(1n);
+    });
+
+    it("does not include posts from other authors", async function () {
+      await forum.connect(alice).createPost(HASH_A);
+      await forum.connect(bob).createPost(HASH_B);
+      const alicePosts = await forum.getPostsByAuthor(alice.address);
+      expect(alicePosts.length).to.equal(1);
+      expect(alicePosts[0].author).to.equal(alice.address);
+    });
+
+    it("works correctly with posts interleaved across multiple authors", async function () {
+      await forum.connect(alice).createPost(HASH_A);
+      await forum.connect(bob).createPost(HASH_B);
+      await forum.connect(alice).createPost(toBytes32("alice-2"));
+      const alicePosts = await forum.getPostsByAuthor(alice.address);
+      const bobPosts   = await forum.getPostsByAuthor(bob.address);
+      expect(alicePosts.length).to.equal(2);
+      expect(bobPosts.length).to.equal(1);
+    });
+
+    it("returned posts contain correct author field", async function () {
+      await forum.connect(alice).createPost(HASH_A);
+      const posts = await forum.getPostsByAuthor(alice.address);
+      expect(posts[0].author).to.equal(alice.address);
+      expect(posts[0].contentHash).to.equal(HASH_A);
     });
   });
 });
