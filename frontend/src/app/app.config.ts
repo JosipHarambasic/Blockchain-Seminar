@@ -10,7 +10,6 @@ export const appConfig: ApplicationConfig = {
     provideZoneChangeDetection({ eventCoalescing: true }),
     provideRouter(routes, withPreloading(PreloadAllModules)),
     provideIonicAngular(),
-    // HttpClient is needed by SubgraphService to query The Graph endpoint.
     provideHttpClient(withFetch()),
   ],
 };

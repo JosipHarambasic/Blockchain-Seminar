@@ -39,7 +39,6 @@ async function main() {
 
   console.log("\nNext steps:");
   console.log("  1. Update frontend/src/environments/environment.ts with the address above.");
-  console.log("  2. Copy subgraph/abis/Forum.json and update subgraph/subgraph.yaml with the address.");
 }
 
 try {
