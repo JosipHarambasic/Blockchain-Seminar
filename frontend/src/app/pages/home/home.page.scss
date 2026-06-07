@@ -258,6 +258,16 @@
   ion-icon { font-size: 0.82rem; }
 }
 
+.post-title {
+  font-size: 0.925rem;
+  font-weight: 600;
+  color: #111827;
+  margin: 0 0 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .post-preview {
   font-size: 0.855rem;
   color: #6b7280;

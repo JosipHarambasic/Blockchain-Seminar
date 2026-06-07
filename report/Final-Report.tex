@@ -186,15 +186,14 @@ struct Comment {
 
 \paragraph{Write functions.}
 \begin{itemize}
-  \item \texttt{createPost(bytes32)} – stores a new post and emits \texttt{PostCreated}.
-  \item \texttt{createComment(uint256 postId, uint256 parentCommentId, bytes32)} – stores a comment or reply. If \texttt{parentCommentId} is non-zero it is validated to belong to the same post.
+  \item \texttt{createPost(bytes32)} -- stores a new post, appends the post ID to the author's\linebreak \texttt{\_authorPostIds} mapping, and emits \texttt{PostCreated}.
+  \item \texttt{createComment(uint256 postId, uint256 parentCommentId, bytes32)} -- stores a comment or reply. If \texttt{parentCommentId} is non-zero it is validated to belong to the same post. \texttt{post.commentCount} is incremented only for top-level comments (\texttt{parentCommentId == 0}); replies do not affect the counter.
   \item \texttt{likePost(uint256)} / \texttt{likeComment(uint256)} – increment the like counter. Revert if the caller has already liked the item (\texttt{mapping(address => mapping(uint256 => bool))}).
 \end{itemize}
 
 \paragraph{Read functions.}
 \begin{itemize}
-  \item \texttt{getPosts(uint256 offset, uint256 limit)} – returns a paginated slice of posts, newest-first, together with the total count. The limit is capped at 100 to prevent gas abuse.
-  \item \texttt{getPost(uint256)} – single post by ID.
+  \item \texttt{getPosts(uint256 offset, uint256 limit)} – returns a paginated slice of posts, newest-first, together with the total count. The limit is capped at 100 to prevent gas abuse.  \item \texttt{getPostsByAuthor(address)} -- returns all posts created by a given address, newest-first, by reading the \texttt{\_authorPostIds} mapping. This is an O(1) mapping lookup and requires no event scanning.  \item \texttt{getPost(uint256)} – single post by ID.
   \item \texttt{getPostComments(uint256)} – all top-level comments for a post.
   \item \texttt{getCommentReplies(uint256)} – all replies to a given comment.
   \item \texttt{hasLikedPost} / \texttt{hasLikedComment} – view helpers for the frontend.
@@ -289,6 +288,7 @@ Reactive state is exposed as read-only signals: \texttt{address}, \texttt{ensNam
 \texttt{ForumService} wraps the \texttt{Forum} contract using a human-readable ABI string array and ethers.js v6 \texttt{Contract}. It maintains two contract instances: a read-only instance backed by a \texttt{JsonRpcProvider} and a write instance re-instantiated on demand with the connected signer. Key methods:
 \begin{itemize}
   \item \texttt{getPosts(offset, limit)} – calls \texttt{getPosts} on the contract, then resolves IPFS content and ENS names for each post.
+  \item \texttt{getPostsByAuthor(address)} – calls the on-chain \texttt{getPostsByAuthor} view function to retrieve all posts for a given address without pagination; used by the My~Posts view.
   \item \texttt{createPost(title, body)} – uploads to IPFS, obtains the bytes32 digest, sends the transaction, waits for receipt, and returns the new post ID.
   \item \texttt{likePost(postId)} / \texttt{likeComment(commentId)} – sends the like transaction.
 \end{itemize}
@@ -296,7 +296,7 @@ Reactive state is exposed as read-only signals: \texttt{address}, \texttt{ensNam
 \subsubsection{Pages and Components}
 
 \begin{itemize}
-  \item \textbf{HomePage} – paginated feed with pull-to-refresh, infinite scroll, and skeleton loading states. Each card shows title, author, timestamp, like count, and comment count.
+  \item \textbf{HomePage} -- responsive feed with a persistent sidebar for navigation. On desktop, posts are shown in a two-column card grid; on mobile the sidebar collapses and is accessible via a hamburger menu that slides it in as a drawer with a backdrop overlay. Each card displays the post title, a body preview, a deterministic avatar icon derived from the author's address, comment count, and a like button. A ``What's on your mind?'' compose bar at the top navigates to post creation. A \textbf{My~Posts} view filters the feed to the connected wallet's posts by calling \texttt{getPostsByAuthor} on-chain, with an independent loading state so it never races with the main feed.
   \item \textbf{PostDetailPage} – single post view with the full body text and a threaded comment section. A textarea allows submitting a new top-level comment.
   \item \textbf{CreatePostPage} – form with title (max 200 characters) and body (max 50\,000 characters) inputs, character counters, and a submit button that is disabled while the title or body is empty or while a submission is in progress.
   \item \textbf{CommentThreadComponent} – recursive standalone component. At depth 0 it eagerly loads replies; at deeper levels replies are loaded lazily on user interaction. Visual nesting is capped at depth 4.
@@ -354,8 +354,14 @@ Account~B clicks the like button on a post authored by Account~A. The like count
 \paragraph{Test scenario 3 – Nested comments.}
 Account~A adds a top-level comment on a post. Account~B adds a reply to that comment (\texttt{parentCommentId} $>$ 0). The frontend renders the reply indented under the parent comment in Account~A's browser after refresh.
 
-\paragraph{Test scenario 4 – Content integrity.}
+\paragraph{Test scenario 4 -- My Posts.}
+Account~A switches to the My~Posts view. The frontend calls \texttt{getPostsByAuthor} with Account~A's address; only Account~A's posts are returned. Account~B's posts do not appear. After Account~A disconnects, the My~Posts view is cleared and the feed reverts to the Home view.
+
+\paragraph{Test scenario 5 -- Content integrity.}
 A post's body is fetched by reconstructing the CID from the on-chain bytes32 digest and requesting the block from IPFS. The decoded content exactly matches what was submitted, confirming the DAG-JSON encode/decode round-trip is lossless.
+
+\paragraph{Test scenario 6 -- Mobile layout.}
+The application is loaded on a mobile viewport ($\leq$680\,px). The sidebar is hidden; a hamburger icon is shown in the top bar. Tapping it slides the sidebar in from the left over a semi-transparent backdrop. Tapping the backdrop or selecting a navigation item closes the sidebar. Posts are displayed in a single-column layout.
 
 \begin{figure}[htbp]
   \centering
@@ -369,6 +375,30 @@ A post's body is fetched by reconstructing the CID from the on-chain bytes32 dig
   \includegraphics[width=0.75\linewidth]{post.png}
   \caption{Post detail page with nested comments.}
   \label{fig:post}
+\end{figure}
+
+\begin{figure}[htbp]
+  \centering
+  \begin{minipage}[t]{0.32\linewidth}
+    \centering
+    \includegraphics[width=\linewidth]{mobile-feed.png}
+    \caption{Mobile feed with hamburger menu closed.}
+    \label{fig:mobile-feed}
+  \end{minipage}
+  \hfill
+  \begin{minipage}[t]{0.32\linewidth}
+    \centering
+    \includegraphics[width=\linewidth]{mobile-sidebar.png}
+    \caption{Mobile sidebar slide-in drawer.}
+    \label{fig:mobile-sidebar}
+  \end{minipage}
+  \hfill
+  \begin{minipage}[t]{0.32\linewidth}
+    \centering
+    \includegraphics[width=\linewidth]{mobile-post.png}
+    \caption{Post detail page on mobile.}
+    \label{fig:mobile-post}
+  \end{minipage}
 \end{figure}
 
 % ─────────────────────────────────────────────────────────────────────────────
@@ -386,7 +416,7 @@ The contract applies no content policy: any valid Ethereum address can create an
 
 \subsection{Scalability}
 
-The \texttt{getPosts} function iterates over posts in memory. With a very large number of posts this could approach the block gas limit if called from a write context, though in practice it is a \texttt{view} function and is therefore not gas-limited. A more scalable approach would use off-chain indexing (e.g.\ The Graph protocol) to serve paginated feeds.
+The \texttt{getPosts} function iterates over posts in memory. With a very large number of posts this could approach the block gas limit if called from a write context, though in practice it is a \texttt{view} function and is therefore not gas-limited. Per-author queries are handled efficiently via the dedicated \texttt{\_authorPostIds} mapping and the \texttt{getPostsByAuthor} view function, avoiding the need to scan event logs. A more scalable approach for the general feed would use off-chain indexing (e.g.\ The Graph protocol) to serve paginated, filterable feeds without touching on-chain storage at query time.
 
 \subsection{No Edit or Delete}
 
@@ -394,7 +424,7 @@ Once a post or comment is created, it cannot be edited or deleted. The immutabil
 
 \subsection{Subgraph Indexing}
 
-No The~Graph subgraph is currently implemented. All feed queries go directly to the contract's \texttt{getPosts} view function, which is subject to the hard cap of 100 posts per call and cannot efficiently filter or sort by arbitrary criteria. Deploying a subgraph that indexes \texttt{PostCreated}, \texttt{CommentCreated}, \texttt{PostLiked}, and \texttt{CommentLiked} events would enable fast, flexible querying of historical data without touching on-chain storage at query time. The deploy script already exports the ABI to \texttt{subgraph/abis/Forum.json} in anticipation of this.
+No The~Graph subgraph is currently implemented. All feed queries go directly to the contract's \texttt{getPosts} view function, which is subject to the hard cap of 100 posts per call. Per-author queries are already handled on-chain via \texttt{getPostsByAuthor}. Deploying a subgraph that indexes \texttt{PostCreated}, \texttt{CommentCreated}, \texttt{PostLiked}, and \texttt{CommentLiked} events would enable fast, flexible querying of historical data and support features such as sorting by like count or searching by keyword.
 
 \subsection{Gas Costs}
 
@@ -411,7 +441,7 @@ ENS name resolution falls back to the connected address shortened to eight chara
 
 This project demonstrates that a functional, censorship-resistant social forum can be built with a relatively small amount of code by combining two complementary decentralised technologies: a smart contract for social rules and metadata, and IPFS for content storage. The key insight is that only the 32-byte SHA-256 digest of the content needs to be stored on-chain; this keeps gas costs low and independent of post length, while IPFS guarantees content integrity via the same digest.
 
-The implementation covers the full stack: a Solidity smart contract deployed on UZHETH PoS, a Node.js backend for IPFS pinning, and an Angular/Ionic frontend with MetaMask integration and in-browser IPFS caching via Helia. End-to-end tests confirm that posts and comments written by one account are immediately readable by other accounts, and that the like-once invariant is enforced on-chain.
+The implementation covers the full stack: a Solidity smart contract deployed on UZHETH PoS, a Node.js backend for IPFS pinning, and an Angular/Ionic frontend with MetaMask integration, in-browser IPFS caching via Helia, and a fully responsive layout that works on both desktop and mobile. A dedicated \texttt{getPostsByAuthor} view function with an on-chain \texttt{\_authorPostIds} mapping enables efficient per-author queries without event scanning. End-to-end tests confirm that posts and comments written by one account are immediately readable by other accounts, the like-once invariant is enforced on-chain, and the My~Posts filter correctly isolates content per wallet.
 
 Future work should focus on IPFS availability guarantees, content moderation, scalability via off-chain indexing, and exploring Layer-2 deployment to reduce transaction costs.
 

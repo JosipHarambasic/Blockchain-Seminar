@@ -104,6 +104,9 @@
               </div>
             </div>
 
+            @if (post.title && post.title !== '(no title)') {
+              <p class="post-title">{{ post.title }}</p>
+            }
             <p class="post-preview">{{ post.body | slice:0:130 }}{{ post.body.length > 130 ? '…' : '' }}</p>
 
             <div class="post-card-footer">
