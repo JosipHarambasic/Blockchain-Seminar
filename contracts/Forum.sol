@@ -148,11 +148,11 @@ contract Forum {
         if (_parentCommentId == 0) {
             // Top-level comment — attach directly to the post.
             _postCommentIds[_postId].push(commentId);
+            _posts[_postId].commentCount++;
         } else {
             // Reply — attach to the parent comment.
             _commentReplyIds[_parentCommentId].push(commentId);
         }
-        _posts[_postId].commentCount++;
 
         emit CommentCreated(commentId, _postId, _parentCommentId, msg.sender, _contentHash, block.timestamp);
     }
