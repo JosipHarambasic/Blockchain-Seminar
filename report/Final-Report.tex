@@ -317,18 +317,57 @@ The smart contract is tested with Hardhat and Mocha/Chai. The test suite in \tex
     \hline
     \textbf{Test case} & \textbf{Expected result} & \textbf{Pass} \\
     \hline
-    Create post with valid bytes32 hash & Post stored, event emitted & \checkmark \\
-    Create post with zero hash & Revert: "contentHash required" & \checkmark \\
-    Retrieve post by ID & Correct fields returned & \checkmark \\
-    Paginated \texttt{getPosts} & Newest-first order, correct slice & \checkmark \\
+    \multicolumn{3}{l}{\textit{createPost}} \\
+    \hline
+    Create post with valid bytes32 hash & Post stored, \texttt{PostCreated} event emitted & \checkmark \\
+    Stored post has correct fields & \texttt{id}, \texttt{author}, \texttt{contentHash} match & \checkmark \\
+    Create post with zero hash & Revert: ``contentHash required'' & \checkmark \\
+    Sequential IDs across multiple posts & Post IDs assigned in order & \checkmark \\
+    \hline
+    \multicolumn{3}{l}{\textit{createComment}} \\
+    \hline
+    Create top-level comment & Stored, attached to post, \texttt{commentCount} incremented & \checkmark \\
+    Stored comment has correct fields & \texttt{author}, \texttt{postId}, \texttt{parentCommentId} match & \checkmark \\
+    \texttt{CommentCreated} event emitted & Event args match comment data & \checkmark \\
+    Create comment with invalid postId & Revert: ``Post not found'' & \checkmark \\
+    Create comment with zero hash & Revert: ``contentHash required'' & \checkmark \\
+    Multiple comments on the same post & All comments retrievable via \texttt{getPostComments} & \checkmark \\
+    Create reply comment & Stored, attached to parent comment & \checkmark \\
+    Reply absent from top-level comments & \texttt{getPostComments} excludes replies & \checkmark \\
+    Reply does not increment \texttt{commentCount} & Post \texttt{commentCount} unchanged after reply & \checkmark \\
+    Create reply with parent on different post & Revert: ``Parent/post mismatch'' & \checkmark \\
+    Create reply with non-existent parent & Revert: ``Parent comment not found'' & \checkmark \\
+    \hline
+    \multicolumn{3}{l}{\textit{likePost}} \\
+    \hline
     Like a post & \texttt{likeCount} incremented & \checkmark \\
-    Like a post twice (same address) & Revert: "Already liked" & \checkmark \\
-    Create top-level comment & Stored, attached to post & \checkmark \\
-    Create reply comment & Stored, attached to parent & \checkmark \\
-    Create comment with invalid postId & Revert: "Post not found" & \checkmark \\
-    Create reply with parent on different post & Revert: "Parent/post mismatch" & \checkmark \\
+    \texttt{PostLiked} event emitted & Event args match post and liker & \checkmark \\
+    Like a post twice (same address) & Revert: ``Already liked this post'' & \checkmark \\
+    Multiple users like the same post & \texttt{likeCount} equals number of unique likers & \checkmark \\
+    Like a non-existent post & Revert: ``Post not found'' & \checkmark \\
+    \texttt{hasLikedPost} reflects like state & Returns \texttt{false} before, \texttt{true} after liking & \checkmark \\
+    \hline
+    \multicolumn{3}{l}{\textit{likeComment}} \\
+    \hline
     Like a comment & \texttt{likeCount} incremented & \checkmark \\
-    Like a comment twice (same address) & Revert: ``Already liked'' & \checkmark \\
+    \texttt{CommentLiked} event emitted & Event args match comment and liker & \checkmark \\
+    Like a comment twice (same address) & Revert: ``Already liked this comment'' & \checkmark \\
+    \texttt{hasLikedComment} reflects like state & Returns \texttt{false} before, \texttt{true} after liking & \checkmark \\
+    \hline
+    \multicolumn{3}{l}{\textit{getPosts (paginated)}} \\
+    \hline
+    No posts exist & Returns empty array and \texttt{total}=0 & \checkmark \\
+    Paginated \texttt{getPosts} & Newest-first order, correct slice & \checkmark \\
+    Offset and limit pagination & Second page returns remaining posts & \checkmark \\
+    Offset beyond total & Returns empty array & \checkmark \\
+    \hline
+    \multicolumn{3}{l}{\textit{getPostsByAuthor}} \\
+    \hline
+    Author with no posts & Returns empty array & \checkmark \\
+    Author posts returned newest-first & Correct order and count & \checkmark \\
+    Posts from other authors excluded & Only caller's posts returned & \checkmark \\
+    Interleaved posts across authors & Each author sees only their own posts & \checkmark \\
+    Returned posts carry correct author field & \texttt{author} and \texttt{contentHash} match & \checkmark \\
     \hline
   \end{tabular}
   \caption{Smart contract test cases.}
