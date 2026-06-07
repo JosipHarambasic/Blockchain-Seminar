@@ -5,8 +5,13 @@
 
   <div class="layout-wrapper">
 
+    <!-- ── Mobile backdrop ──────────────────────────────────────────────── -->
+    @if (sidebarOpen()) {
+      <div class="sidebar-backdrop" (click)="toggleSidebar()"></div>
+    }
+
     <!-- ── Sidebar ──────────────────────────────────────────────────────── -->
-    <aside class="sidebar">
+    <aside class="sidebar" [class.open]="sidebarOpen()">
       <div class="sidebar-logo">
         <ion-icon name="chatbubble-outline"></ion-icon>
         <span>DeForum</span>
@@ -46,6 +51,16 @@
 
     <!-- ── Main content ──────────────────────────────────────────────────── -->
     <main class="main-content">
+
+      <!-- Mobile top bar -->
+      <div class="mobile-topbar">
+        <button class="hamburger-btn" (click)="toggleSidebar()">
+          <ion-icon [name]="sidebarOpen() ? 'close-outline' : 'menu-outline'"></ion-icon>
+        </button>
+        <span class="mobile-title">
+          <ion-icon name="chatbubble-outline"></ion-icon> Forum
+        </span>
+      </div>
 
       <!-- Compose bar -->
       <div class="compose-bar" (click)="openCreatePost()">

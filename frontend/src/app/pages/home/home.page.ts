@@ -14,7 +14,7 @@ import { addIcons } from "ionicons";
 import {
   heartOutline, heart, chatbubbleOutline,
   homeOutline, documentTextOutline, bookmarkOutline, settingsOutline,
-  addCircle, personOutline,
+  addCircle, personOutline, menuOutline, closeOutline,
   happy, planet, leaf, moon, sunny, snow, thunderstorm,
   flame, diamond, musicalNotes, pizza, bicycle, boat, globe, star, rocket,
 } from "ionicons/icons";
@@ -55,6 +55,7 @@ export class HomePage implements OnInit {
   myPostsLoaded  = signal(false);
   hasMore        = computed(() => this.view() === 'all' && this.posts().length < this.total());
   visiblePosts   = computed(() => this.view() === 'mine' ? this.myPosts() : this.posts());
+  sidebarOpen    = signal(false);
 
   // ── Skeletons for initial load ───────────────────────────────────────────
   readonly skeletons = Array(5);
@@ -63,7 +64,7 @@ export class HomePage implements OnInit {
     addIcons({
       heartOutline, heart, chatbubbleOutline,
       homeOutline, documentTextOutline, bookmarkOutline, settingsOutline,
-      addCircle, personOutline,
+      addCircle, personOutline, menuOutline, closeOutline,
       happy, planet, leaf, moon, sunny, snow, thunderstorm,
       flame, diamond, musicalNotes, pizza, bicycle, boat, globe, star, rocket,
     });
@@ -148,7 +149,12 @@ export class HomePage implements OnInit {
 
   setView(v: 'all' | 'mine'): void {
     this.view.set(v);
+    this.sidebarOpen.set(false);
     if (v === 'mine' && !this.myPostsLoaded()) this.loadMyPosts();
+  }
+
+  toggleSidebar(): void {
+    this.sidebarOpen.update(o => !o);
   }
 
   // ─── Wallet ───────────────────────────────────────────────────────────────
