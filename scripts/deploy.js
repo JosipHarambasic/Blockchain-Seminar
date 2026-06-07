@@ -23,13 +23,6 @@ async function main() {
   const address = await forum.getAddress();
   console.log("Forum deployed to:", address);
 
-  // ── Write ABI for subgraph ────────────────────────────────────────────────
-  const artifact = await artifacts.readArtifact("Forum");
-  const abiOut = path.join(__dirname, "../subgraph/abis/Forum.json");
-  fs.mkdirSync(path.dirname(abiOut), { recursive: true });
-  fs.writeFileSync(abiOut, JSON.stringify(artifact.abi, null, 2));
-  console.log("ABI written to:", abiOut);
-
   // ── Write deployment info for the frontend ────────────────────────────────
   const deploymentInfo = {
     contractAddress: address,
